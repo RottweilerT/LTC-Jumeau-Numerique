@@ -11,7 +11,7 @@ const { chromium } = require('playwright'); const fs = require('fs');
   await p.goto('http://localhost:8765/importer.html');
   await p.evaluate(() => { localStorage.setItem('__fakefs', JSON.stringify({ personnes: { p_a: { nom: 'Ernestine Valmorel' }, p_b: { nom: 'Rosalinde Fougerolle' } }, config: { batiment: { nom: 'B', largeur: 12, profondeur: 8, zones: [], murs: [] } } })); localStorage.setItem('jumeau-profil', 'p_a'); localStorage.setItem('jumeau-profil-nom', 'Ernestine Valmorel'); });
   await p.goto('http://localhost:8765/'); await p.waitForTimeout(1500);
-  console.log('après remise à zéro → page de connexion :', await p.locator('#login').count(), '| profils :', await p.locator('.login-p').count());
+  console.log('connexion :', await p.locator('#login').count(), '| profils :', await p.locator('.login-p').allTextContents());
   for (const n of ['Ernestine Valmorel', 'Test Effacer']) { await p.fill('.login-new input', n); await p.click('.login-new button'); await p.waitForSelector('#profilBtn'); await p.click('#profilBtn'); await p.click('#profilBtn'); await p.waitForSelector('.login-p'); }
   console.log('profils créés :', await p.locator('.login-p').allTextContents());
   await p.click('[aria-label="Supprimer le profil Test Effacer"]'); await p.click('[aria-label="Supprimer le profil Test Effacer"]'); await p.waitForTimeout(400);
