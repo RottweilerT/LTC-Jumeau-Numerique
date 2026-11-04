@@ -1,10 +1,10 @@
 <!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Importer des données – Jumeau du bâtiment</title><link rel="icon" href="favicon.svg" type="image/svg+xml">
+<title>Importer des données – Jumeau du bâtiment</title><link rel="icon" href="favicon-32.png" type="image/png"><link rel="apple-touch-icon" href="apple-touch-icon.png"><link rel="manifest" href="manifest.webmanifest">
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="firebase-config.js"></script>
 <style>
-:root{--bg:#ECEEEA;--surface:#fff;--ink:#1B2127;--muted:#5B646E;--line:#D2D7D8;--accent:#D4561A;--ok:#2E7D4F;--danger:#B3261E}
+:root{--bg:#EDF1F7;--surface:#fff;--ink:#12223F;--muted:#5B646E;--line:#D2D7D8;--accent:#B9661F;--ok:#2E7D4F;--danger:#B3261E}
 @media (prefers-color-scheme:dark){:root{--bg:#14181C;--surface:#1C2126;--ink:#E6E9EB;--muted:#98A1AA;--line:#323940;--accent:#EE7638;--ok:#6FC08F;--danger:#F08B82}}
 body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
 main{max-width:620px;margin:0 auto;padding:24px 16px;display:flex;flex-direction:column;gap:14px}
@@ -13,7 +13,7 @@ h1{margin:0;font-size:24px}.card{background:var(--surface);border:1px solid var(
 button.primary{background:var(--accent);border-color:var(--accent);color:#fff}button:disabled{opacity:.5;cursor:default}
 .err{color:var(--danger)}.ok{color:var(--ok)}table{border-collapse:collapse}td{padding:2px 12px 2px 0}a{color:var(--accent)}
 </style></head><body><main>
-<h1>Importer des données dans le jumeau</h1>
+<h1 style="display:flex;align-items:center;gap:12px"><img src="logo-96.png" alt="" width="44" height="44" style="border-radius:10px">Importer des données dans le jumeau</h1>
 <p class="muted">Pour transférer le jumeau depuis claude.ai : dans l'ancien jumeau, bouton « Exporter toutes les données » (panneau de droite, rubrique Sauvegarde), puis choisir ici le fichier obtenu. Les éléments déjà présents avec le même identifiant sont remplacés ; les autres ne sont pas touchés.</p>
 <div class="card"><input type="file" id="f" accept=".json,application/json"><div id="res" class="muted">Aucun fichier choisi.</div>
 <div><button class="primary" id="go" disabled>Importer dans la base</button></div><div id="msg"></div></div>

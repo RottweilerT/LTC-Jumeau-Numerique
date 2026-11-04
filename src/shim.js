@@ -51,7 +51,7 @@
     box.innerHTML = '<form style="background:var(--surface,#fff);color:var(--ink,#000);border-radius:12px;padding:18px;width:min(380px,100%);display:flex;flex-direction:column;gap:10px;font-family:var(--f-body,sans-serif)">'
       + '<b style="font-size:18px">Bienvenue</b><label style="display:flex;flex-direction:column;gap:4px;font-size:13px">Votre prénom (il apparaîtra à côté de vos modifications)'
       + '<input name="n" required maxlength="40" autocomplete="given-name" style="padding:10px;font-size:16px;border:1px solid #bbb;border-radius:8px"></label>'
-      + '<button style="padding:10px;font-size:15px;border:0;border-radius:8px;background:#D4561A;color:#fff;cursor:pointer">Continuer</button></form>';
+      + '<button style="padding:10px;font-size:15px;border:0;border-radius:8px;background:#B9661F;color:#fff;cursor:pointer">Continuer</button></form>';
     box.querySelector("form").addEventListener("submit", e => {
       e.preventDefault();
       const n = box.querySelector("input").value.trim(); if (!n) return;

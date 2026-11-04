@@ -1,4 +1,4 @@
-<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#1B2127"><link rel="icon" href="favicon.svg" type="image/svg+xml"><style>:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0;padding:0}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style><script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script><script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script><script src="firebase-config.js"></script></head><body><script>/* Pont entre le jumeau (écrit pour claude.ai) et Firebase.
+<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#122C58"><link rel="icon" href="favicon-32.png" type="image/png"><link rel="apple-touch-icon" href="apple-touch-icon.png"><link rel="manifest" href="manifest.webmanifest"><style>:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0;padding:0}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style><script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script><script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script><script src="firebase-config.js"></script></head><body><script>/* Pont entre le jumeau (écrit pour claude.ai) et Firebase.
    Le code de l'application appelle claude.use("db" | "user" | "downloads") :
    - db        → Firestore (même façon d'écrire : doc(), collection(), onSnapshot, set, update, delete) ;
    - user      → identifiant de cet appareil + prénom saisi une fois (collection « personnes ») ;
@@ -51,7 +51,7 @@
     box.innerHTML = '<form style="background:var(--surface,#fff);color:var(--ink,#000);border-radius:12px;padding:18px;width:min(380px,100%);display:flex;flex-direction:column;gap:10px;font-family:var(--f-body,sans-serif)">'
       + '<b style="font-size:18px">Bienvenue</b><label style="display:flex;flex-direction:column;gap:4px;font-size:13px">Votre prénom (il apparaîtra à côté de vos modifications)'
       + '<input name="n" required maxlength="40" autocomplete="given-name" style="padding:10px;font-size:16px;border:1px solid #bbb;border-radius:8px"></label>'
-      + '<button style="padding:10px;font-size:15px;border:0;border-radius:8px;background:#D4561A;color:#fff;cursor:pointer">Continuer</button></form>';
+      + '<button style="padding:10px;font-size:15px;border:0;border-radius:8px;background:#B9661F;color:#fff;cursor:pointer">Continuer</button></form>';
     box.querySelector("form").addEventListener("submit", e => {
       e.preventDefault();
       const n = box.querySelector("input").value.trim(); if (!n) return;
@@ -73,24 +73,27 @@
 <style>
 /* Layout : barre d'outils en haut, plan 2D / maquette 3D à gauche, fiche de l'étagère à droite (empilée sous le plan sur mobile) */
 :root{
-  --bg:#ECEEEA; --surface:#FFFFFF; --surface-2:#F5F6F3; --ink:#1B2127; --muted:#5B646E; --line:#D2D7D8; --grid:#DCE0DD;
-  --accent:#D4561A; --accent-ink:#FFFFFF; --sel:#E01B1B; --pink:#F7A8C8; --pink-ink:#D9628F; --steel:#2C5A8B; --match:#B88A00; --danger:#B3261E; --ok:#2E7D4F;
-  --occ0:#FFFFFF; --occ1:#F6DCC9; --occ2:#EDAA80; --occ3:#DC7139;
-  --floor:#E2E5E0; --carton:#B6884F; --zone:#2C5A8B; --wood:#4E3020;
+  --bg:#EDF1F7; --surface:#FFFFFF; --surface-2:#F4F6FA; --ink:#12223F; --muted:#56637A; --line:#D3DAE6; --grid:#DFE5EF;
+  --accent:#B9661F; --accent-ink:#FFFFFF; --sel:#E01B1B; --pink:#F7A8C8; --pink-ink:#D9628F; --steel:#264D80; --match:#B88A00; --danger:#B3261E; --ok:#2E7D4F;
+  --occ0:#FFFFFF; --occ1:#F7E5CC; --occ2:#EBBF86; --occ3:#D48A3F;
+  --floor:#E3E8F0; --carton:#DFA15E; --zone:#264D80; --wood:#4E3020;
+  --brand:#122C58; --brand-2:#1C3D73; --brand-ink:#FFFFFF; --brand-muted:#B9C6DD;
   --f-display:"Barlow Condensed","Arial Narrow",sans-serif;
   --f-body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
   --f-mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
 }
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
-  --bg:#14181C; --surface:#1C2126; --surface-2:#22282E; --ink:#E6E9EB; --muted:#98A1AA; --line:#323940; --grid:#262C32;
-  --accent:#EE7638; --accent-ink:#14181C; --sel:#FF4D4D; --pink:#F59BC0; --pink-ink:#C94F7E; --steel:#6E9AD0; --match:#E0B53A; --danger:#F08B82; --ok:#6FC08F;
-  --occ0:#1C2126; --occ1:#45322A; --occ2:#84492A; --occ3:#CC642F;
-  --floor:#262B30; --carton:#9C7444; --zone:#6E9AD0; --wood:#5E3B26; color-scheme:dark}}
+  --bg:#0A1428; --surface:#111E38; --surface-2:#172746; --ink:#E7ECF5; --muted:#9AA8C0; --line:#25365A; --grid:#1A2A4A;
+  --accent:#E3A35F; --accent-ink:#0A1428; --sel:#FF4D4D; --pink:#F59BC0; --pink-ink:#C94F7E; --steel:#86A9DA; --match:#E0B53A; --danger:#F08B82; --ok:#6FC08F;
+  --occ0:#111E38; --occ1:#46392A; --occ2:#86602F; --occ3:#C98A43;
+  --floor:#152443; --carton:#B98345; --zone:#86A9DA; --wood:#5E3B26;
+  --brand:#0D2148; --brand-2:#163266; --brand-ink:#FFFFFF; --brand-muted:#A6B6D3; color-scheme:dark}}
 :root[data-theme="dark"]{
-  --bg:#14181C; --surface:#1C2126; --surface-2:#22282E; --ink:#E6E9EB; --muted:#98A1AA; --line:#323940; --grid:#262C32;
-  --accent:#EE7638; --accent-ink:#14181C; --sel:#FF4D4D; --pink:#F59BC0; --pink-ink:#C94F7E; --steel:#6E9AD0; --match:#E0B53A; --danger:#F08B82; --ok:#6FC08F;
-  --occ0:#1C2126; --occ1:#45322A; --occ2:#84492A; --occ3:#CC642F;
-  --floor:#262B30; --carton:#9C7444; --zone:#6E9AD0; --wood:#5E3B26; color-scheme:dark}
+  --bg:#0A1428; --surface:#111E38; --surface-2:#172746; --ink:#E7ECF5; --muted:#9AA8C0; --line:#25365A; --grid:#1A2A4A;
+  --accent:#E3A35F; --accent-ink:#0A1428; --sel:#FF4D4D; --pink:#F59BC0; --pink-ink:#C94F7E; --steel:#86A9DA; --match:#E0B53A; --danger:#F08B82; --ok:#6FC08F;
+  --occ0:#111E38; --occ1:#46392A; --occ2:#86602F; --occ3:#C98A43;
+  --floor:#152443; --carton:#B98345; --zone:#86A9DA; --wood:#5E3B26;
+  --brand:#0D2148; --brand-2:#163266; --brand-ink:#FFFFFF; --brand-muted:#A6B6D3; color-scheme:dark}
 
 html,body{height:100%}
 body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:14px;line-height:1.45}
@@ -100,9 +103,13 @@ button,input,select,textarea{font:inherit;color:inherit}
 .app{display:flex;flex-direction:column;height:100%;padding-inline:16px;padding-block:12px;gap:12px}
 
 /* Barre d'outils */
-.bar{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px}
+.bar{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;background:linear-gradient(135deg,var(--brand-2),var(--brand));color:var(--brand-ink);border-radius:14px;padding:10px 14px;box-shadow:0 6px 18px rgba(18,44,88,.18)}
+.logo{width:48px;height:48px;flex:none;border-radius:11px;box-shadow:0 2px 8px rgba(0,0,0,.25)}
+.bar .seg,.bar .btn,.bar .search input{color:var(--ink)}
+.bar .seg{border-color:transparent}
+.bar .seg button[aria-pressed="true"]{background:var(--carton);color:#12223F}
 .brand{display:flex;flex-direction:column;min-width:0;margin-right:auto}
-.brand small{font-family:var(--f-mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.brand small{font-family:var(--f-mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--brand-muted)}
 .brand h1{margin:0;font-family:var(--f-display);font-weight:700;font-size:26px;line-height:1.05;letter-spacing:.01em;text-wrap:balance}
 .seg{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden;background:var(--surface)}
 .seg button{border:0;background:none;padding:7px 14px;cursor:pointer;font-family:var(--f-display);font-weight:600;font-size:16px;letter-spacing:.04em}
@@ -364,7 +371,8 @@ h3{margin:0 0 8px;font-family:var(--f-display);font-size:17px;font-weight:600;le
 
 <div class="app" id="app">
   <header class="bar">
-    <div class="brand"><small id="brandSub">Jumeau numérique</small><h1 id="bname">Bâtiment</h1></div>
+    <img class="logo" src="logo-96.png" alt="" width="48" height="48">
+    <div class="brand"><small id="brandSub">LTC · Jumeau numérique</small><h1 id="bname">Bâtiment</h1></div>
     <div class="seg tabs" role="tablist" aria-label="Onglets">
       <button id="tabPlan" role="tab" aria-pressed="true">Plan</button>
       <button id="tabVis" role="tab" aria-pressed="false">Visites clients</button>
@@ -507,7 +515,7 @@ function searchResults() {
 function render() {
   const c = S.config;
   $("#bname").textContent = c?.nom || "Bâtiment";
-  $("#brandSub").textContent = c ? "Jumeau numérique" : "Jumeau numérique";
+  $("#brandSub").textContent = "LTC · Jumeau numérique";
   $("#v2").setAttribute("aria-pressed", S.view === "2d");
   $("#v3").setAttribute("aria-pressed", S.view === "3d");
   const canEditPlan = S.canWrite && !S.offline && !!c;
@@ -1512,7 +1520,7 @@ async function boot() {
   try { user = await claude.use("user"); } catch (_) { user = null; }
   if (user) { try { uid = await user.id(); const c = await user.can("data.write"); if (c === false) S.canWrite = false; } catch (_) {} }
   db.doc("config/batiment").onSnapshot(s => { S.config = s.exists ? s.data() : null; S.loaded.config = true; changed(); }, dbErr);
-  db.collection("racks").onSnapshot(s => { S.racks = new Map(s.docs.map(d => [d.id, { id: d.id, ...d.data() }])); S.loaded.racks = true; changed(); }, dbErr);
+  db.collection("racks").onSnapshot(s => { S.racks = new Map(s.docs.map(d => [d.id, { id: d.id, ...d.data() }]).filter(([, r]) => r.type !== "chien" && r.type !== "lapin")); S.loaded.racks = true; changed(); }, dbErr);
   db.collection("items").onSnapshot(s => { S.items = new Map(s.docs.map(d => [d.id, { id: d.id, ...d.data() }])); S.loaded.items = true; changed(); }, dbErr);
 }
 window.__twin = { S, get db() { return db; }, get uid() { return uid; }, get user() { return user; }, rackName, toast, el, listeners: [] };
@@ -1942,7 +1950,7 @@ async function exportPdf(v) {
   const W = 210, M = 12, BOT = 284, BLOCK = 98;
   // En-tête compact
   doc.setFont("helvetica", "bold"); doc.setFontSize(15); doc.text("Compte rendu de présentation des lots", M, 17);
-  doc.setDrawColor(212, 86, 26); doc.setLineWidth(.7); doc.line(M, 20, W - M, 20);
+  doc.setDrawColor(223, 161, 94); doc.setLineWidth(.7); doc.line(M, 20, W - M, 20);
   doc.setFontSize(9.5);
   const info1 = [["Client : ", client || "—"], ["Visite : ", `${fDate(v.date)}${v.heure ? " à " + v.heure : ""}`]];
   if (v.collab) info1.push(["Accompagné par : ", v.collab]);

@@ -27,7 +27,7 @@ jobs:
       - name: Préparer les fichiers du site
         run: |
           mkdir -p _site
-          cp index.html importer.html firebase-config.js favicon.svg .nojekyll _site/
+          cp index.html importer.html firebase-config.js manifest.webmanifest .nojekyll *.png _site/
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
