@@ -38,7 +38,7 @@ jobs:
           python3 - <<'PY'
           import json, re, urllib.request, urllib.error
           KEY = re.search(r'apiKey:\s*"([^"]+)"', open("firebase-config.js", encoding="utf-8").read()).group(1)
-          HDR = {"Referer": "https://rottweilert.github.io/LTC-Jumeau-Batiment/", "Content-Type": "application/json"}
+          HDR = {"Referer": "https://rottweilert.github.io/LTC-Jumeau-Numerique/", "Content-Type": "application/json"}
           b = json.load(open("/tmp/base.json"))
           base = f"https://firestore.googleapis.com/v1/projects/{b['projet']}/databases/(default)/documents"
           ok = err = 0
