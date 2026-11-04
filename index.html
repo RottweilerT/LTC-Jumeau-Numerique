@@ -1,13 +1,15 @@
 <!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#122C58"><link rel="icon" href="favicon-32.png?v=3" type="image/png"><link rel="apple-touch-icon" href="apple-touch-icon.png?v=3"><link rel="manifest" href="manifest.webmanifest"><style>:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0;padding:0}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style><script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script><script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script><script src="firebase-config.js"></script></head><body><script>/* Pont entre le jumeau (écrit pour claude.ai) et Firebase.
    Le code de l'application appelle claude.use("db" | "user" | "downloads") :
    - db        → Firestore (même façon d'écrire : doc(), collection(), onSnapshot, set, update, delete) ;
-   - user      → identifiant de cet appareil + prénom saisi une fois (collection « personnes ») ;
+   - user      → profil choisi sur la page de connexion (collection « personnes »), gardé sur l'appareil ;
    - downloads → téléchargement direct du fichier dans le navigateur. */
 (() => {
   "use strict";
-  const ls = { get(k) { try { return localStorage.getItem(k); } catch (_) { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch (_) {} } };
-  let ID = ls.get("jumeau-appareil");
-  if (!ID) { ID = "u_" + Math.random().toString(36).slice(2, 12) + Date.now().toString(36); ls.set("jumeau-appareil", ID); }
+  const ls = {
+    get(k) { try { return localStorage.getItem(k); } catch (_) { return null; } },
+    set(k, v) { try { localStorage.setItem(k, v); } catch (_) {} },
+    del(k) { try { localStorage.removeItem(k); } catch (_) {} }
+  };
 
   let db = null;
   if (typeof FIREBASE_CONFIG !== "undefined" && FIREBASE_CONFIG && window.firebase) {
@@ -19,9 +21,19 @@
     } catch (e) { console.error(e); db = null; }
   }
 
+  // ----- Profil -----
+  // Ancienne version : un identifiant par appareil + prénom. On le reprend tel quel comme profil.
+  if (!ls.get("jumeau-profil") && ls.get("jumeau-appareil") && ls.get("jumeau-nom")) {
+    ls.set("jumeau-profil", ls.get("jumeau-appareil")); ls.set("jumeau-profil-nom", ls.get("jumeau-nom"));
+  }
+  let ID = ls.get("jumeau-profil"), NOM = ls.get("jumeau-profil-nom") || "";
+  let choisi; const pret = new Promise(r => { choisi = r; });
+  if (ID || !db) choisi();
+
   const names = new Map();
+  if (ID) names.set(ID, NOM);
   const user = {
-    id: async () => ID,
+    id: async () => { await pret; return ID; },
     can: async () => true,
     profiles: async ids => {
       const out = {};
@@ -42,28 +54,84 @@
     }
   };
   window.claude = { use: async name => name === "db" ? db : name === "user" ? (db ? user : null) : name === "downloads" ? downloads : null };
+  window.__profil = () => ({ id: ID, nom: NOM });
 
-  // Prénom de la personne (affiché dans « Dernières mises à jour » et l'historique)
-  function askName() {
-    if (!db || ls.get("jumeau-nom")) return;
-    const box = document.createElement("div");
-    box.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.45);display:grid;place-items:center;z-index:100;padding:16px";
-    box.innerHTML = '<form style="background:var(--surface,#fff);color:var(--ink,#000);border-radius:12px;padding:18px;width:min(380px,100%);display:flex;flex-direction:column;gap:10px;font-family:var(--f-body,sans-serif)">'
-      + '<b style="font-size:18px">Bienvenue</b><label style="display:flex;flex-direction:column;gap:4px;font-size:13px">Votre prénom (il apparaîtra à côté de vos modifications)'
-      + '<input name="n" required maxlength="40" autocomplete="given-name" style="padding:10px;font-size:16px;border:1px solid #bbb;border-radius:8px"></label>'
-      + '<button style="padding:10px;font-size:15px;border:0;border-radius:8px;background:#B9661F;color:#fff;cursor:pointer">Continuer</button></form>';
-    box.querySelector("form").addEventListener("submit", e => {
-      e.preventDefault();
-      const n = box.querySelector("input").value.trim(); if (!n) return;
-      ls.set("jumeau-nom", n); names.set(ID, n);
-      db.collection("personnes").doc(ID).set({ nom: n, depuis: new Date().toISOString() }).catch(() => {});
-      box.remove();
-    });
-    document.body.append(box);
-    setTimeout(() => box.querySelector("input").focus(), 50);
+  const norm = s => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+
+  function choisir(id, nom) {
+    ID = id; NOM = nom; names.set(id, nom);
+    ls.set("jumeau-profil", id); ls.set("jumeau-profil-nom", nom);
+    db.collection("personnes").doc(id).set({ vu: new Date().toISOString() }, { merge: true }).catch(() => {});
+    document.getElementById("login")?.remove();
+    badge(); choisi();
   }
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", askName); else askName();
-  window.__nomAppareil = () => ls.get("jumeau-nom");
+
+  // Page de connexion : choisir son profil ou en créer un
+  function connexion() {
+    const box = document.createElement("div");
+    box.id = "login"; box.className = "login";
+    box.innerHTML = `<div class="login-card">
+      <div class="login-head"><img src="logo-96.png?v=3" alt="" width="64" height="64"><div><small>LTC · Jumeau numérique</small><h1>Qui êtes-vous ?</h1></div></div>
+      <p class="login-hint">Choisissez votre profil. Il restera enregistré sur cet appareil et apparaîtra à côté de vos modifications.</p>
+      <input type="search" class="login-q" placeholder="Rechercher un nom…" aria-label="Rechercher un profil" hidden>
+      <div class="login-list" role="list"><p class="login-hint">Chargement des profils…</p></div>
+      <form class="login-new">
+        <label>Nouveau profil<input name="n" maxlength="40" autocomplete="name" placeholder="Prénom et nom"></label>
+        <button class="btn primary big" type="submit">Créer mon profil</button>
+        <p class="login-err" hidden></p>
+      </form></div>`;
+    document.body.append(box);
+    const list = box.querySelector(".login-list"), q = box.querySelector(".login-q"), form = box.querySelector(".login-new"), err = box.querySelector(".login-err");
+    let profils = [];
+    const dessiner = () => {
+      const f = norm(q.value), vis = profils.filter(p => !f || norm(p.nom).includes(f));
+      q.hidden = profils.length < 8;
+      list.innerHTML = profils.length ? "" : '<p class="login-hint">Aucun profil pour l\'instant : créez le vôtre ci-dessous.</p>';
+      for (const p of vis) {
+        const b = document.createElement("button"); b.type = "button"; b.className = "login-p"; b.setAttribute("role", "listitem");
+        b.innerHTML = `<span class="av">${esc((p.nom.trim()[0] || "?").toUpperCase())}</span><span>${esc(p.nom)}</span>`;
+        b.onclick = () => choisir(p.id, p.nom);
+        list.append(b);
+      }
+      if (profils.length && !vis.length) list.innerHTML = '<p class="login-hint">Aucun profil ne correspond.</p>';
+    };
+    db.collection("personnes").onSnapshot(s => {
+      profils = s.docs.map(d => ({ id: d.id, nom: String(d.data().nom || "").trim() })).filter(p => p.nom).sort((a, b) => a.nom.localeCompare(b.nom, "fr"));
+      dessiner();
+    }, () => { list.innerHTML = '<p class="login-err">La base ne répond pas. Vérifiez la connexion puis rechargez la page.</p>'; });
+    q.addEventListener("input", dessiner);
+    form.addEventListener("submit", async e => {
+      e.preventDefault(); err.hidden = true;
+      const nom = form.n.value.replace(/\s+/g, " ").trim();
+      if (nom.length < 2) { err.textContent = "Indiquez votre prénom et votre nom."; err.hidden = false; return; }
+      const deja = profils.find(p => norm(p.nom) === norm(nom));
+      if (deja) { err.textContent = `Le profil « ${deja.nom} » existe déjà : touchez-le dans la liste ci-dessus.`; err.hidden = false; return; }
+      const id = "p_" + norm(nom).replace(/[^a-z0-9]+/g, "-").slice(0, 24) + "_" + Math.random().toString(36).slice(2, 7);
+      try { await db.collection("personnes").doc(id).set({ nom, cree: new Date().toISOString() }); choisir(id, nom); }
+      catch (_) { err.textContent = "Création impossible. Vérifiez la connexion puis réessayez."; err.hidden = false; }
+    });
+  }
+
+  // Profil actif dans l'en-tête, avec possibilité d'en changer
+  function badge() {
+    const bar = document.querySelector(".bar"); if (!bar || !ID) return;
+    let b = document.getElementById("profilBtn");
+    if (!b) {
+      b = document.createElement("button"); b.id = "profilBtn"; b.className = "btn profil-btn"; b.type = "button";
+      b.title = "Changer de profil";
+      b.onclick = () => {
+        if (b.dataset.armed) { ls.del("jumeau-profil"); ls.del("jumeau-profil-nom"); location.reload(); return; }
+        b.dataset.armed = "1"; b.textContent = "Changer de profil ?";
+        setTimeout(() => { delete b.dataset.armed; b.textContent = "👤 " + NOM; }, 4000);
+      };
+      bar.append(b);
+    }
+    b.textContent = "👤 " + NOM;
+  }
+
+  function demarrer() { if (!db) return; if (!ID) connexion(); else badge(); }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", demarrer); else demarrer();
 })();
 </script>
 <title>Jumeau numérique du bâtiment</title>
@@ -367,6 +435,24 @@ h3{margin:0 0 8px;font-family:var(--f-display);font-size:17px;font-weight:600;le
 .vtype small{color:var(--muted)}
 .vpre{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted)}
 .vpre input{padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);font-size:16px;color:var(--ink)}
+
+/* Page de connexion (profils) */
+.login{position:fixed;inset:0;z-index:100;background:linear-gradient(160deg,var(--brand-2),var(--brand));display:grid;place-items:center;padding:16px;overflow:auto}
+.login-card{background:var(--surface);color:var(--ink);border-radius:16px;padding:22px;width:min(440px,100%);display:flex;flex-direction:column;gap:14px;box-shadow:0 20px 50px rgba(0,0,0,.35)}
+.login-head{display:flex;align-items:center;gap:14px}
+.login-head img{width:64px;height:64px;flex:none}
+.login-head small{font-family:var(--f-mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.login-head h1{margin:0;font-family:var(--f-display);font-size:30px;line-height:1.05}
+.login-hint{margin:0;font-size:13px;color:var(--muted)}
+.login-q,.login-new input{padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);font-size:16px;width:100%}
+.login-list{display:flex;flex-direction:column;gap:6px;max-height:44vh;overflow:auto}
+.login-p{display:flex;align-items:center;gap:12px;width:100%;text-align:left;border:1px solid var(--line);background:var(--surface-2);border-radius:10px;padding:10px 12px;font-size:16px;font-weight:500;cursor:pointer}
+.login-p:hover,.login-p:focus-visible{border-color:var(--accent)}
+.login-p .av{width:34px;height:34px;flex:none;border-radius:50%;display:grid;place-items:center;background:var(--carton);color:#12223F;font-family:var(--f-display);font-weight:700;font-size:18px}
+.login-new{display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--line);padding-top:14px}
+.login-new label{display:flex;flex-direction:column;gap:5px;font-size:12px;color:var(--muted)}
+.login-err{margin:0;font-size:13px;color:var(--danger)}
+.profil-btn{max-width:220px;overflow:hidden;text-overflow:ellipsis}
 </style>
 
 <div class="app" id="app">
@@ -1628,7 +1714,7 @@ function render() {
 function listView() {
   const out = [];
   out.push(el("div", { class: "vhead" }, el("h2", { text: "Visites clients" }),
-    el("button", { class: "btn primary big", text: "+ Nouvelle visite", onclick: () => { V.form = { nom: "", prenom: "", date: today(), heure: nowHM(), collab: "", com: "", type: "collection", prefixe: "40", lots: { text: "" } }; render(); setTimeout(() => $("#vf-nom")?.focus(), 0); } })));
+    el("button", { class: "btn primary big", text: "+ Nouvelle visite", onclick: () => { V.form = { nom: "", prenom: "", date: today(), heure: nowHM(), collab: (window.__profil?.().nom || ""), com: "", type: "collection", prefixe: "40", lots: { text: "" } }; render(); setTimeout(() => $("#vf-nom")?.focus(), 0); } })));
   if (!T.db) { out.push(el("p", { class: "hint", text: "La base Firebase n'est pas disponible : les visites ne peuvent pas être enregistrées." })); return out; }
   if (V.form) out.push(newForm());
   if (!V.loaded) { out.push(el("p", { class: "hint", text: "Chargement des visites…" })); return out; }

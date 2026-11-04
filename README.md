@@ -15,7 +15,7 @@ Plan 2D/3D du bâtiment avec les armoires, coffres, tables, roulettes et les lot
 | `racks` | Un document par emplacement (armoire, coffre, table, bureau, roulette, sol…) |
 | `items` | Un document par lot rangé (ou par niveau quand un lot occupe plusieurs niveaux) |
 | `visites` | Une visite client par document : lots à présenter, heures de présentation, historique, signatures |
-| `personnes` | Prénom saisi sur chaque appareil (affiché à côté des modifications) |
+| `personnes` | Profils des utilisateurs (choisis ou créés sur la page de connexion, gardés sur chaque appareil) |
 
 ## Modifier le code
 

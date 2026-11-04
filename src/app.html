@@ -299,6 +299,24 @@ h3{margin:0 0 8px;font-family:var(--f-display);font-size:17px;font-weight:600;le
 .vtype small{color:var(--muted)}
 .vpre{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted)}
 .vpre input{padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);font-size:16px;color:var(--ink)}
+
+/* Page de connexion (profils) */
+.login{position:fixed;inset:0;z-index:100;background:linear-gradient(160deg,var(--brand-2),var(--brand));display:grid;place-items:center;padding:16px;overflow:auto}
+.login-card{background:var(--surface);color:var(--ink);border-radius:16px;padding:22px;width:min(440px,100%);display:flex;flex-direction:column;gap:14px;box-shadow:0 20px 50px rgba(0,0,0,.35)}
+.login-head{display:flex;align-items:center;gap:14px}
+.login-head img{width:64px;height:64px;flex:none}
+.login-head small{font-family:var(--f-mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.login-head h1{margin:0;font-family:var(--f-display);font-size:30px;line-height:1.05}
+.login-hint{margin:0;font-size:13px;color:var(--muted)}
+.login-q,.login-new input{padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);font-size:16px;width:100%}
+.login-list{display:flex;flex-direction:column;gap:6px;max-height:44vh;overflow:auto}
+.login-p{display:flex;align-items:center;gap:12px;width:100%;text-align:left;border:1px solid var(--line);background:var(--surface-2);border-radius:10px;padding:10px 12px;font-size:16px;font-weight:500;cursor:pointer}
+.login-p:hover,.login-p:focus-visible{border-color:var(--accent)}
+.login-p .av{width:34px;height:34px;flex:none;border-radius:50%;display:grid;place-items:center;background:var(--carton);color:#12223F;font-family:var(--f-display);font-weight:700;font-size:18px}
+.login-new{display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--line);padding-top:14px}
+.login-new label{display:flex;flex-direction:column;gap:5px;font-size:12px;color:var(--muted)}
+.login-err{margin:0;font-size:13px;color:var(--danger)}
+.profil-btn{max-width:220px;overflow:hidden;text-overflow:ellipsis}
 </style>
 
 <div class="app" id="app">
@@ -1560,7 +1578,7 @@ function render() {
 function listView() {
   const out = [];
   out.push(el("div", { class: "vhead" }, el("h2", { text: "Visites clients" }),
-    el("button", { class: "btn primary big", text: "+ Nouvelle visite", onclick: () => { V.form = { nom: "", prenom: "", date: today(), heure: nowHM(), collab: "", com: "", type: "collection", prefixe: "40", lots: { text: "" } }; render(); setTimeout(() => $("#vf-nom")?.focus(), 0); } })));
+    el("button", { class: "btn primary big", text: "+ Nouvelle visite", onclick: () => { V.form = { nom: "", prenom: "", date: today(), heure: nowHM(), collab: (window.__profil?.().nom || ""), com: "", type: "collection", prefixe: "40", lots: { text: "" } }; render(); setTimeout(() => $("#vf-nom")?.focus(), 0); } })));
   if (!T.db) { out.push(el("p", { class: "hint", text: "La base Firebase n'est pas disponible : les visites ne peuvent pas être enregistrées." })); return out; }
   if (V.form) out.push(newForm());
   if (!V.loaded) { out.push(el("p", { class: "hint", text: "Chargement des visites…" })); return out; }
