@@ -377,7 +377,7 @@ h3{margin:0 0 8px;font-family:var(--f-display);font-size:17px;font-weight:600;le
       <button id="tabPlan" role="tab" aria-pressed="true">Plan</button>
       <button id="tabVis" role="tab" aria-pressed="false">Visites clients</button>
     </div>
-    <div class="seg plan-only" role="group" aria-label="Type de vue">
+    <div class="seg plan-only" role="group" aria-label="Type de vue" hidden>
       <button id="v2" aria-pressed="true">2D</button>
       <button id="v3" aria-pressed="false">3D</button>
     </div>
@@ -419,8 +419,6 @@ h3{margin:0 0 8px;font-family:var(--f-display);font-size:17px;font-weight:600;le
 </div>
 <div class="toast" id="toast" hidden></div>
 
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 <script>
 (() => {
 "use strict";
