@@ -310,6 +310,11 @@ h3{margin:0 0 8px;font-family:var(--f-display);font-size:17px;font-weight:600;le
 .login-hint{margin:0;font-size:13px;color:var(--muted)}
 .login-q,.login-new input{padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);font-size:16px;width:100%}
 .login-list{display:flex;flex-direction:column;gap:6px;max-height:44vh;overflow:auto}
+.login-row{display:flex;gap:6px;align-items:stretch}
+.login-row .login-p{flex:1;min-width:0}
+.login-del{flex:none;border:1px solid var(--line);background:var(--surface);color:var(--muted);border-radius:10px;padding:0 12px;font-size:13px;cursor:pointer}
+.login-del:hover{color:var(--danger);border-color:var(--danger)}
+.login-del.armed{background:var(--danger);border-color:var(--danger);color:#fff}
 .login-p{display:flex;align-items:center;gap:12px;width:100%;text-align:left;border:1px solid var(--line);background:var(--surface-2);border-radius:10px;padding:10px 12px;font-size:16px;font-weight:500;cursor:pointer}
 .login-p:hover,.login-p:focus-visible{border-color:var(--accent)}
 .login-p .av{width:34px;height:34px;flex:none;border-radius:50%;display:grid;place-items:center;background:var(--carton);color:#12223F;font-family:var(--f-display);font-weight:700;font-size:18px}

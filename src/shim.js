@@ -64,7 +64,7 @@
     ls.set("jumeau-profil", id); ls.set("jumeau-profil-nom", nom);
     db.collection("personnes").doc(id).set({ vu: new Date().toISOString() }, { merge: true }).catch(() => {});
     document.getElementById("login")?.remove();
-    badge(); choisi();
+    badge(); surveiller(); choisi();
   }
 
   // Page de connexion : choisir son profil ou en créer un
@@ -89,10 +89,22 @@
       q.hidden = profils.length < 8;
       list.innerHTML = profils.length ? "" : '<p class="login-hint">Aucun profil pour l\'instant : créez le vôtre ci-dessous.</p>';
       for (const p of vis) {
-        const b = document.createElement("button"); b.type = "button"; b.className = "login-p"; b.setAttribute("role", "listitem");
+        const row = document.createElement("div"); row.className = "login-row"; row.setAttribute("role", "listitem");
+        const b = document.createElement("button"); b.type = "button"; b.className = "login-p";
         b.innerHTML = `<span class="av">${esc((p.nom.trim()[0] || "?").toUpperCase())}</span><span>${esc(p.nom)}</span>`;
         b.onclick = () => choisir(p.id, p.nom);
-        list.append(b);
+        const x = document.createElement("button"); x.type = "button"; x.className = "login-del"; x.textContent = "Supprimer";
+        x.setAttribute("aria-label", "Supprimer le profil " + p.nom);
+        x.onclick = async () => {
+          if (!x.classList.contains("armed")) {
+            x.classList.add("armed"); x.textContent = "Confirmer";
+            setTimeout(() => { x.classList.remove("armed"); x.textContent = "Supprimer"; }, 5000); return;
+          }
+          x.disabled = true;
+          try { await db.collection("personnes").doc(p.id).delete(); }
+          catch (_) { x.disabled = false; err.textContent = "Suppression impossible. Vérifiez la connexion."; err.hidden = false; }
+        };
+        row.append(b, x); list.append(row);
       }
       if (profils.length && !vis.length) list.innerHTML = '<p class="login-hint">Aucun profil ne correspond.</p>';
     };
@@ -130,6 +142,32 @@
     b.textContent = "👤 " + NOM;
   }
 
-  function demarrer() { if (!db) return; if (!ID) connexion(); else badge(); }
+  function deconnecter() { ls.del("jumeau-profil"); ls.del("jumeau-profil-nom"); location.reload(); }
+
+  // Remise à zéro demandée le 04/11/2026 : tous les profils sont effacés une seule fois (le premier appareil qui ouvre le site s'en charge).
+  const REMISE = 1;
+  async function remiseAZero() {
+    try {
+      const ref = db.collection("config").doc("profils");
+      const s = await ref.get({ source: "server" });
+      if ((s.exists && s.data().remise) >= REMISE) return;
+      await ref.set({ remise: REMISE, le: new Date().toISOString() }, { merge: true });
+      const all = await db.collection("personnes").get({ source: "server" });
+      await Promise.all(all.docs.map(d => d.ref.delete()));
+    } catch (_) {}
+  }
+
+  // Si le profil de cet appareil est supprimé (ici ou ailleurs), retour à la page de connexion
+  function surveiller() {
+    db.collection("personnes").doc(ID).onSnapshot(s => {
+      if (!s.exists && !(s.metadata && s.metadata.fromCache)) deconnecter();
+    }, () => {});
+  }
+
+  async function demarrer() {
+    if (!db) return;
+    await remiseAZero();
+    if (!ID) connexion(); else { badge(); surveiller(); }
+  }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", demarrer); else demarrer();
 })();

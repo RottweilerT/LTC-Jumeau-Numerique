@@ -3,7 +3,7 @@
   const KEY = '__fakefs', load = () => JSON.parse(localStorage.getItem(KEY) || '{}'), save = s => localStorage.setItem(KEY, JSON.stringify(s));
   const L = new Set(), notify = () => setTimeout(() => L.forEach(l => l()), 0), clone = o => JSON.parse(JSON.stringify(o));
   let n = 0; const nid = () => 'id' + (++n) + Math.random().toString(36).slice(2, 6);
-  function snap(c, id) { const d = (load()[c] || {})[id]; return { id, exists: !!d, data: () => d && clone(d) }; }
+  function snap(c, id) { const d = (load()[c] || {})[id]; return { id, exists: !!d, data: () => d && clone(d), ref: doc(c, id) }; }
   function write(c, id, f) { const s = load(); s[c] = s[c] || {}; const r = f(s[c][id]); if (r === undefined) delete s[c][id]; else s[c][id] = clone(r); save(s); notify(); }
   function doc(c, id) { return { id,
     get: async () => snap(c, id),
