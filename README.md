@@ -3,7 +3,7 @@
 Plan 2D/3D du bâtiment avec les armoires, coffres, tables, roulettes et les lots rangés à chaque niveau, plus l'onglet **Visites clients** (lots à présenter, cochage en direct, compte rendu PDF signé).
 
 - Site : https://rottweilert.github.io/LTC-Jumeau-Batiment/ (GitHub Pages, mis à jour à chaque modification de la branche `main`).
-- Données partagées : Firebase Firestore. La configuration est dans `firebase-config.js`.
+- Données partagées : Firebase Firestore (projet `ltc-jumeau-numerique`). La configuration est dans `firebase-config.js`.
 - `firestore.rules` : règles d'accès à coller dans Firebase → Firestore Database → Règles. Accès ouvert : toute personne ayant le lien peut lire et modifier.
 - `importer.html` : importe un fichier d'export (bouton « Exporter toutes les données » du jumeau) dans la base.
 
