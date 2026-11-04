@@ -157,6 +157,22 @@
     } catch (_) {}
   }
 
+  // Profils de l'équipe créés une seule fois (liste donnée le 05/11/2026). Identifiant fixe par nom : pas de doublon même si deux appareils s'en chargent.
+  const EQUIPE = ["Romain Carpentier", "Anders Thorell", "Benjamin Botti", "Bertrand Sinais", "Christophe Picard", "Gaël Caron", "Gérald Imbert", "Isabelle Simon", "Laurence Canella", "Paul Carpentier"];
+  const AJOUT = 1;
+  async function creerEquipe() {
+    try {
+      const ref = db.collection("config").doc("profils");
+      const s = await ref.get({ source: "server" });
+      if ((s.exists && s.data().ajout) >= AJOUT) return;
+      await ref.set({ ajout: AJOUT }, { merge: true });
+      const exist = new Set((await db.collection("personnes").get({ source: "server" })).docs.map(d => norm(d.data().nom)));
+      const t = new Date().toISOString();
+      await Promise.all(EQUIPE.filter(n => !exist.has(norm(n))).map(n =>
+        db.collection("personnes").doc("p_" + norm(n).replace(/[^a-z0-9]+/g, "-")).set({ nom: n, cree: t })));
+    } catch (_) {}
+  }
+
   // Si le profil de cet appareil est supprimé (ici ou ailleurs), retour à la page de connexion
   function surveiller() {
     db.collection("personnes").doc(ID).onSnapshot(s => {
@@ -167,6 +183,7 @@
   async function demarrer() {
     if (!db) return;
     await remiseAZero();
+    await creerEquipe();
     if (!ID) connexion(); else { badge(); surveiller(); }
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", demarrer); else demarrer();
