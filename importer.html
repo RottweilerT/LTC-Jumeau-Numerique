@@ -1,0 +1,60 @@
+<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Importer des données – Jumeau du bâtiment</title><link rel="icon" href="favicon.svg" type="image/svg+xml">
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="firebase-config.js"></script>
+<style>
+:root{--bg:#ECEEEA;--surface:#fff;--ink:#1B2127;--muted:#5B646E;--line:#D2D7D8;--accent:#D4561A;--ok:#2E7D4F;--danger:#B3261E}
+@media (prefers-color-scheme:dark){:root{--bg:#14181C;--surface:#1C2126;--ink:#E6E9EB;--muted:#98A1AA;--line:#323940;--accent:#EE7638;--ok:#6FC08F;--danger:#F08B82}}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:620px;margin:0 auto;padding:24px 16px;display:flex;flex-direction:column;gap:14px}
+h1{margin:0;font-size:24px}.card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:10px}
+.muted{color:var(--muted)}button{font:inherit;padding:10px 16px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink);cursor:pointer}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}button:disabled{opacity:.5;cursor:default}
+.err{color:var(--danger)}.ok{color:var(--ok)}table{border-collapse:collapse}td{padding:2px 12px 2px 0}a{color:var(--accent)}
+</style></head><body><main>
+<h1>Importer des données dans le jumeau</h1>
+<p class="muted">Pour transférer le jumeau depuis claude.ai : dans l'ancien jumeau, bouton « Exporter toutes les données » (panneau de droite, rubrique Sauvegarde), puis choisir ici le fichier obtenu. Les éléments déjà présents avec le même identifiant sont remplacés ; les autres ne sont pas touchés.</p>
+<div class="card"><input type="file" id="f" accept=".json,application/json"><div id="res" class="muted">Aucun fichier choisi.</div>
+<div><button class="primary" id="go" disabled>Importer dans la base</button></div><div id="msg"></div></div>
+<p><a href="./">← Retour au jumeau</a></p>
+</main>
+<script>
+(() => {
+const $ = s => document.querySelector(s);
+let db = null, data = null;
+if (typeof FIREBASE_CONFIG !== "undefined" && FIREBASE_CONFIG && window.firebase) { firebase.initializeApp(FIREBASE_CONFIG); db = firebase.firestore(); db.settings({ ignoreUndefinedProperties: true }); }
+if (!db) $("#msg").innerHTML = '<p class="err">La base Firebase n\'est pas encore branchée (firebase-config.js).</p>';
+const NOMS = { config: "Réglages du bâtiment", racks: "Emplacements (armoires, roulettes…)", items: "Lots rangés", visites: "Visites clients", personnes: "Personnes" };
+$("#f").addEventListener("change", async () => {
+  data = null; $("#go").disabled = true; $("#msg").textContent = "";
+  const file = $("#f").files[0]; if (!file) return;
+  try {
+    const j = JSON.parse(await file.text());
+    if (j.format !== "jumeau-batiment" || !j.collections) throw new Error("Ce fichier n'est pas un export du jumeau.");
+    data = j;
+    const rows = Object.entries(j.collections).map(([c, d]) => `<tr><td>${NOMS[c] || c}</td><td><b>${Object.keys(d).length}</b></td></tr>`).join("");
+    $("#res").innerHTML = `Export du ${new Date(j.exporte).toLocaleString("fr-FR")} :<table>${rows}</table>`;
+    $("#go").disabled = !db;
+  } catch (e) { $("#res").innerHTML = `<span class="err">${e.message || "Fichier illisible."}</span>`; }
+});
+$("#go").addEventListener("click", async () => {
+  if (!data || !db) return;
+  $("#go").disabled = true;
+  const ops = [];
+  for (const [c, docs] of Object.entries(data.collections)) for (const [id, d] of Object.entries(docs)) ops.push([c, id, d]);
+  try {
+    for (let i = 0; i < ops.length; i += 400) {
+      const b = db.batch();
+      ops.slice(i, i + 400).forEach(([c, id, d]) => b.set(db.collection(c).doc(id), d));
+      $("#msg").textContent = `Envoi… ${Math.min(i + 400, ops.length)} / ${ops.length}`;
+      await b.commit();
+    }
+    $("#msg").innerHTML = `<p class="ok">Import terminé : ${ops.length} éléments enregistrés. <a href="./">Ouvrir le jumeau</a></p>`;
+  } catch (e) {
+    $("#msg").innerHTML = `<p class="err">Échec de l'import${e.code === "permission-denied" ? " : la base refuse l'accès, publiez d'abord les règles de firestore.rules" : " (" + (e.message || e) + ")"}.</p>`;
+    $("#go").disabled = false;
+  }
+});
+})();
+</script></body></html>
