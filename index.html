@@ -64,7 +64,7 @@
     ls.set("jumeau-profil", id); ls.set("jumeau-profil-nom", nom);
     db.collection("personnes").doc(id).set({ vu: new Date().toISOString() }, { merge: true }).catch(() => {});
     document.getElementById("login")?.remove();
-    badge(); choisi();
+    badge(); surveiller(); choisi();
   }
 
   // Page de connexion : choisir son profil ou en créer un
@@ -89,10 +89,22 @@
       q.hidden = profils.length < 8;
       list.innerHTML = profils.length ? "" : '<p class="login-hint">Aucun profil pour l\'instant : créez le vôtre ci-dessous.</p>';
       for (const p of vis) {
-        const b = document.createElement("button"); b.type = "button"; b.className = "login-p"; b.setAttribute("role", "listitem");
+        const row = document.createElement("div"); row.className = "login-row"; row.setAttribute("role", "listitem");
+        const b = document.createElement("button"); b.type = "button"; b.className = "login-p";
         b.innerHTML = `<span class="av">${esc((p.nom.trim()[0] || "?").toUpperCase())}</span><span>${esc(p.nom)}</span>`;
         b.onclick = () => choisir(p.id, p.nom);
-        list.append(b);
+        const x = document.createElement("button"); x.type = "button"; x.className = "login-del"; x.textContent = "Supprimer";
+        x.setAttribute("aria-label", "Supprimer le profil " + p.nom);
+        x.onclick = async () => {
+          if (!x.classList.contains("armed")) {
+            x.classList.add("armed"); x.textContent = "Confirmer";
+            setTimeout(() => { x.classList.remove("armed"); x.textContent = "Supprimer"; }, 5000); return;
+          }
+          x.disabled = true;
+          try { await db.collection("personnes").doc(p.id).delete(); }
+          catch (_) { x.disabled = false; err.textContent = "Suppression impossible. Vérifiez la connexion."; err.hidden = false; }
+        };
+        row.append(b, x); list.append(row);
       }
       if (profils.length && !vis.length) list.innerHTML = '<p class="login-hint">Aucun profil ne correspond.</p>';
     };
@@ -130,7 +142,33 @@
     b.textContent = "👤 " + NOM;
   }
 
-  function demarrer() { if (!db) return; if (!ID) connexion(); else badge(); }
+  function deconnecter() { ls.del("jumeau-profil"); ls.del("jumeau-profil-nom"); location.reload(); }
+
+  // Remise à zéro demandée le 04/11/2026 : tous les profils sont effacés une seule fois (le premier appareil qui ouvre le site s'en charge).
+  const REMISE = 1;
+  async function remiseAZero() {
+    try {
+      const ref = db.collection("config").doc("profils");
+      const s = await ref.get({ source: "server" });
+      if ((s.exists && s.data().remise) >= REMISE) return;
+      await ref.set({ remise: REMISE, le: new Date().toISOString() }, { merge: true });
+      const all = await db.collection("personnes").get({ source: "server" });
+      await Promise.all(all.docs.map(d => d.ref.delete()));
+    } catch (_) {}
+  }
+
+  // Si le profil de cet appareil est supprimé (ici ou ailleurs), retour à la page de connexion
+  function surveiller() {
+    db.collection("personnes").doc(ID).onSnapshot(s => {
+      if (!s.exists && !(s.metadata && s.metadata.fromCache)) deconnecter();
+    }, () => {});
+  }
+
+  async function demarrer() {
+    if (!db) return;
+    await remiseAZero();
+    if (!ID) connexion(); else { badge(); surveiller(); }
+  }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", demarrer); else demarrer();
 })();
 </script>
@@ -446,6 +484,11 @@ h3{margin:0 0 8px;font-family:var(--f-display);font-size:17px;font-weight:600;le
 .login-hint{margin:0;font-size:13px;color:var(--muted)}
 .login-q,.login-new input{padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);font-size:16px;width:100%}
 .login-list{display:flex;flex-direction:column;gap:6px;max-height:44vh;overflow:auto}
+.login-row{display:flex;gap:6px;align-items:stretch}
+.login-row .login-p{flex:1;min-width:0}
+.login-del{flex:none;border:1px solid var(--line);background:var(--surface);color:var(--muted);border-radius:10px;padding:0 12px;font-size:13px;cursor:pointer}
+.login-del:hover{color:var(--danger);border-color:var(--danger)}
+.login-del.armed{background:var(--danger);border-color:var(--danger);color:#fff}
 .login-p{display:flex;align-items:center;gap:12px;width:100%;text-align:left;border:1px solid var(--line);background:var(--surface-2);border-radius:10px;padding:10px 12px;font-size:16px;font-weight:500;cursor:pointer}
 .login-p:hover,.login-p:focus-visible{border-color:var(--accent)}
 .login-p .av{width:34px;height:34px;flex:none;border-radius:50%;display:grid;place-items:center;background:var(--carton);color:#12223F;font-family:var(--f-display);font-weight:700;font-size:18px}
