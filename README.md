@@ -11,10 +11,10 @@ Plan 2D/3D du bâtiment avec les armoires, coffres, tables, roulettes et les lot
 
 | Collection | Contenu |
 | --- | --- |
-| `config` | Document `batiment` : nom, dimensions, murs, portes, fenêtres, zones |
+| `config` | Document `batiment` : nom, dimensions, murs, portes, fenêtres, zones · document `ventes` : liste des ventes (nom, date) où sont rangées les visites · document `profils` |
 | `racks` | Un document par emplacement (armoire, coffre, table, bureau, roulette, sol…) |
 | `items` | Un document par lot rangé (ou par niveau quand un lot occupe plusieurs niveaux) |
-| `visites` | Une visite client par document : lots à présenter, heures de présentation, historique, signatures |
+| `visites` | Une visite client par document : vente où elle est rangée, lots à présenter, heures de présentation, historique, signature |
 | `personnes` | Profils des utilisateurs (choisis ou créés sur la page de connexion, gardés sur chaque appareil) |
 
 ## Modifier le code
