@@ -486,6 +486,18 @@ h3{margin:0 0 8px;font-family:var(--f-display);font-size:17px;font-weight:600;le
 .modal .box{background:var(--surface);border-radius:12px;padding:16px;width:min(640px,100%);display:flex;flex-direction:column;gap:10px}
 .modal canvas{width:100%;height:200px;background:#fff;border:1px solid var(--line);border-radius:8px;touch-action:none}
 .hist{font-size:12px;color:var(--muted);font-family:var(--f-mono);display:flex;flex-direction:column;gap:2px;max-height:160px;overflow:auto}
+@media (max-width:860px){.visits{overflow:visible}}
+.vtabs{position:sticky;top:0;z-index:8;display:flex;gap:6px;overflow-x:auto;padding:6px;margin:0 -2px;background:var(--bg);border-bottom:1px solid var(--line);scrollbar-width:thin}
+.vtab{flex:none;display:flex;align-items:stretch;border:1.5px solid var(--line);border-radius:10px;background:var(--surface);max-width:220px}
+.vtab.on{border-color:var(--brand);background:var(--brand);color:var(--brand-ink)}
+.vtab.all{padding:8px 14px;font-weight:600;cursor:pointer;font-size:14px}
+.vtab-go{all:unset;cursor:pointer;display:flex;flex-direction:column;gap:1px;padding:6px 4px 6px 12px;min-width:0}
+.vtab-n{font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:150px}
+.vtab-p{font-family:var(--f-mono);font-size:11px;opacity:.75}
+.vtab-x{border:0;background:none;color:inherit;opacity:.6;font-size:20px;line-height:1;padding:0 10px;cursor:pointer}
+.vtab-x:hover{opacity:1}
+.vtab-go:focus-visible,.vtab-x:focus-visible{outline:2px solid var(--accent);outline-offset:-2px;border-radius:8px}
+.chip-s.open{margin-left:6px;background:color-mix(in srgb,var(--brand) 14%,transparent);color:var(--steel)}
 .vtypes{display:flex;flex-wrap:wrap;gap:10px;align-items:stretch}
 .vtype{flex:1 1 220px;display:flex;gap:10px;align-items:flex-start;border:1.5px solid var(--line);border-radius:10px;padding:12px;cursor:pointer}
 .vtype.on{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 8%,transparent)}
@@ -1747,7 +1759,8 @@ function start() {
   V.sub = true;
   T.db.collection("visites").onSnapshot(s => {
     V.list = new Map(s.docs.map(d => [d.id, { id: d.id, ...d.data() }])); V.loaded = true;
-    if (V.cur && !V.list.has(V.cur)) V.cur = null;
+    const avant = V.open.length; V.open = V.open.filter(id => V.list.has(id)); if (V.open.length !== avant) saveOpen();
+    if (V.cur && !V.list.has(V.cur)) V.cur = V.open[V.open.length - 1] || null;
     render();
   }, () => toast("La synchronisation des visites s'est interrompue. Rechargez la page.", true));
 }
@@ -1779,6 +1792,45 @@ function setMode(m) {
 $("#tabPlan").onclick = () => setMode("plan");
 $("#tabVis").onclick = () => setMode("visites");
 
+/* ---- Plusieurs visites ouvertes en même temps (onglets, 4 au maximum) ---- */
+const MAX_OUVERTES = 4;
+V.open = (() => { try { return JSON.parse(localStorage.getItem("visites-ouvertes") || "[]").filter(x => typeof x === "string").slice(0, MAX_OUVERTES); } catch (_) { return []; } })();
+V.etat = {};
+const saveOpen = () => { try { localStorage.setItem("visites-ouvertes", JSON.stringify(V.open)); } catch (_) {} };
+const vRoot = () => $("#visits");
+function memoriser() { if (V.cur) V.etat[V.cur] = { filter: V.filter, y: window.scrollY, ry: vRoot().scrollTop }; }
+function ouvrir(id) {
+  if (!V.open.includes(id)) {
+    if (V.open.length >= MAX_OUVERTES) { toast(`${MAX_OUVERTES} visites sont déjà ouvertes : fermez-en une (×) pour en ouvrir une autre.`, true); return false; }
+    V.open.push(id); saveOpen();
+  }
+  memoriser();
+  const e = V.etat[id] || {};
+  V.cur = id; V.filter = e.filter || "tous"; V.adding = false; V.confirm = null; V.delArm = null; V.addSel = new Set(); V.addQ = ""; V.addTxt = { text: "" };
+  render();
+  requestAnimationFrame(() => { vRoot().scrollTop = e.ry || 0; window.scrollTo(0, e.y || 0); });
+  return true;
+}
+function fermer(id) {
+  V.open = V.open.filter(x => x !== id); saveOpen(); delete V.etat[id];
+  if (V.cur === id) { V.cur = null; V.adding = false; V.confirm = null; if (V.open.length) { ouvrir(V.open[V.open.length - 1]); return; } }
+  render();
+}
+function onglets() {
+  const vs = V.open.map(id => V.list.get(id)).filter(Boolean);
+  if (!vs.length) return null;
+  return el("div", { class: "vtabs", role: "tablist", "aria-label": "Visites ouvertes" },
+    el("button", { class: "vtab all" + (!V.cur ? " on" : ""), role: "tab", "aria-selected": String(!V.cur), text: "Toutes", onclick: () => { memoriser(); V.cur = null; V.adding = false; V.confirm = null; render(); } }),
+    vs.map(v => {
+      const n = (v.lots || []).length, vu = (v.lots || []).filter(l => l.vu).length, on = V.cur === v.id;
+      return el("div", { class: "vtab" + (on ? " on" : "") + (v.statut === "terminee" ? " done" : "") },
+        el("button", { class: "vtab-go", role: "tab", "aria-selected": String(on), onclick: () => { if (!on) ouvrir(v.id); } },
+          el("span", { class: "vtab-n", text: `${v.prenom || ""} ${v.nom || ""}`.trim() || "Client" }),
+          el("span", { class: "vtab-p", text: `${vu}/${n}` })),
+        el("button", { class: "vtab-x", "aria-label": "Fermer l'onglet de " + (`${v.prenom || ""} ${v.nom || ""}`.trim() || "ce client"), title: "Fermer l'onglet (la visite est conservée)", text: "×", onclick: () => fermer(v.id) }));
+    }));
+}
+
 /* ---- Rendu ---- */
 function render() {
   if (V.mode !== "visites") return;
@@ -1786,8 +1838,10 @@ function render() {
   const a = document.activeElement;
   const keep = a && root.contains(a) && a.id ? { id: a.id, s: a.selectionStart, val: a.value } : null;
   const sc = { root: root.scrollTop, win: window.scrollY, list: root.querySelector(".addlist")?.scrollTop || 0 };
-  root.replaceChildren(...(V.cur && V.list.get(V.cur) ? detail(V.list.get(V.cur)) : listView()));
+  root.replaceChildren(...[onglets(), ...(V.cur && V.list.get(V.cur) ? detail(V.list.get(V.cur)) : listView())].filter(Boolean));
   const al = root.querySelector(".addlist"); if (al) al.scrollTop = sc.list;
+  const tb = root.querySelector(".vtabs"), on = tb?.querySelector(".vtab.on");
+  if (tb && on) { const l = on.offsetLeft - tb.offsetLeft; if (l < tb.scrollLeft || l + on.offsetWidth > tb.scrollLeft + tb.clientWidth) tb.scrollLeft = Math.max(0, l - 8); }
   root.scrollTop = sc.root; if (Math.abs(window.scrollY - sc.win) > 1) window.scrollTo(0, sc.win);
   if (keep) { const n = document.getElementById(keep.id); if (n) { if (keep.val != null && n.value !== keep.val) n.value = keep.val; n.focus({ preventScroll: true }); try { n.setSelectionRange(keep.s, keep.s); } catch (_) {} } }
 }
@@ -1803,17 +1857,17 @@ function listView() {
   if (!vs.length) { out.push(el("p", { class: "hint", text: "Aucune visite enregistrée. Créez la première avec « Nouvelle visite »." })); return out; }
   out.push(el("div", { class: "vlist" }, vs.map(v => {
     const n = (v.lots || []).length, vu = (v.lots || []).filter(l => l.vu).length;
-    const open = () => { V.cur = v.id; V.filter = "tous"; V.adding = false; V.confirm = null; V.delArm = null; render(); };
+    const open = () => ouvrir(v.id);
     const armed = V.delArm === v.id;
     const del = el("button", { class: "btn small danger" + (armed ? " armed" : ""), text: armed ? "Confirmer la suppression" : "Supprimer", onclick: async e => {
       e.stopPropagation();
       if (!armed) { V.delArm = v.id; render(); clearTimeout(V.delT); V.delT = setTimeout(() => { if (V.delArm === v.id) { V.delArm = null; render(); } }, 6000); return; }
       V.delArm = null;
-      try { await vdoc(v.id).delete(); V.list.delete(v.id); toast("Visite supprimée"); render(); }
+      try { await vdoc(v.id).delete(); V.list.delete(v.id); fermer(v.id); toast("Visite supprimée"); }
       catch (err) { toast(err?.code === "invalid_argument" ? "Vous n'avez pas le droit de supprimer cette visite." : "Suppression impossible. Vérifiez la connexion.", true); }
     } });
     return el("div", { class: "vitem", role: "button", tabindex: 0, onclick: open, onkeydown: e => { if ((e.key === "Enter" || e.key === " ") && e.target === e.currentTarget) { e.preventDefault(); open(); } } },
-      el("div", {}, el("span", { class: "chip-s " + (v.statut === "terminee" ? "done" : "live"), text: v.statut === "terminee" ? "Terminée" : "En cours" })),
+      el("div", {}, el("span", { class: "chip-s " + (v.statut === "terminee" ? "done" : "live"), text: v.statut === "terminee" ? "Terminée" : "En cours" }), V.open.includes(v.id) ? el("span", { class: "chip-s open", text: "Onglet ouvert" }) : null),
       el("b", { text: `${v.prenom || ""} ${v.nom || ""}`.trim() || "Client sans nom" }),
       el("div", { class: "vmeta", text: `${venteLabel(v)} · ${fDate(v.date)} à ${v.heure || "—"}${v.collab ? " · avec " + v.collab : ""}` }),
       el("div", { class: "vmeta", text: `${vu} lot${vu > 1 ? "s" : ""} présenté${vu > 1 ? "s" : ""} sur ${n}` }),
@@ -1851,7 +1905,7 @@ function newForm() {
     if (!r0.added.length) { toast("Indiquez les lots que le client souhaite voir (saisie ou fichier).", true); $("#vf-paste")?.focus(); return; }
     const t0 = new Date().toISOString();
     const data = { typeVente: F.type, prefixe: F.type === "collection" ? F.prefixe.trim() : "", nom: F.nom.trim(), prenom: F.prenom.trim(), date: F.date || today(), heure: F.heure || nowHM(), collab: F.collab.trim(), commentaires: F.com.trim(), observations: "", statut: "en_cours", creee: new Date().toISOString(), creePar: T.uid || null, lots: r0.added.map(x => ({ lot: x, ajoute: t0, vu: null })), historique: [{ t: t0, action: "creation", lot: null, par: T.uid || null }, ...r0.added.map(x => ({ t: t0, action: "ajout", lot: x, par: T.uid || null, ...(cat0.has(x) ? {} : { horsBase: true }) }))], signatures: {} };
-    try { const ref = await T.db.collection("visites").add(data); V.form = null; V.cur = ref.id; V.adding = false; toast("Visite créée avec " + lotsMsg(r0), !!r0.unknown.length); render(); }
+    try { const ref = await T.db.collection("visites").add(data); V.form = null; if (!ouvrir(ref.id)) render(); toast("Visite créée avec " + lotsMsg(r0), !!r0.unknown.length); render(); }
     catch (err) { toast("Impossible de créer la visite. Vérifiez la connexion.", true); }
   } },
     el("div", { class: "eyebrow", text: "Nouvelle visite" }),
@@ -1871,7 +1925,7 @@ function detail(v) {
   const out = [], cat = catalog(), lots = v.lots || [], n = lots.length, vu = lots.filter(l => l.vu).length;
   const pct = n ? Math.round(vu / n * 100) : 0, done = v.statut === "terminee";
   out.push(el("div", { class: "vhead" },
-    el("button", { class: "btn big", text: "← Toutes les visites", onclick: () => { V.cur = null; V.adding = false; V.confirm = null; render(); } }),
+    el("button", { class: "btn big", text: "← Toutes les visites", onclick: () => { memoriser(); V.cur = null; V.adding = false; V.confirm = null; render(); } }),
     el("h2", { text: `${v.prenom || ""} ${v.nom || ""}`.trim() }),
     el("span", { class: "chip-s " + (done ? "done" : "live"), text: done ? "Terminée" : "En cours" })));
   out.push(el("div", { class: "vmeta", text: `${venteLabel(v)} · visite du ${fDate(v.date)} à ${v.heure || "—"}${v.collab ? " · accompagné par " + v.collab : ""}` }));
@@ -1943,7 +1997,7 @@ function detail(v) {
     el("button", { class: "btn big danger" + (V.delArm === v.id ? " armed" : ""), text: V.delArm === v.id ? "Confirmer : supprimer définitivement" : "Supprimer la visite", onclick: async () => {
       if (V.delArm !== v.id) { V.delArm = v.id; render(); clearTimeout(V.delT); V.delT = setTimeout(() => { if (V.delArm === v.id) { V.delArm = null; render(); } }, 6000); return; }
       V.delArm = null;
-      try { await vdoc(v.id).delete(); V.list.delete(v.id); V.cur = null; toast("Visite supprimée"); render(); }
+      try { await vdoc(v.id).delete(); V.list.delete(v.id); fermer(v.id); toast("Visite supprimée"); }
       catch (e) { toast(e?.code === "invalid_argument" ? "Vous n'avez pas le droit de supprimer cette visite." : "Suppression impossible. Vérifiez la connexion.", true); }
     } }),
     done ? el("button", { class: "btn big", text: "Rouvrir la visite", onclick: () => patch(v.id, { statut: "en_cours", historique: hist(v, "reouverture") }) }) : null,
