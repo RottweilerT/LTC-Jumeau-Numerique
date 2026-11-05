@@ -6,7 +6,7 @@
 /* Layout : barre d'outils en haut, plan 2D / maquette 3D à gauche, fiche de l'étagère à droite (empilée sous le plan sur mobile) */
 :root{
   --bg:#EDF1F7; --surface:#FFFFFF; --surface-2:#F4F6FA; --ink:#12223F; --muted:#56637A; --line:#D3DAE6; --grid:#DFE5EF;
-  --accent:#B9661F; --accent-ink:#FFFFFF; --sel:#E01B1B; --pink:#F7A8C8; --pink-ink:#D9628F; --steel:#264D80; --match:#B88A00; --danger:#B3261E; --ok:#2E7D4F;
+  --accent:#B9661F; --accent-ink:#FFFFFF; --sel:#E01B1B; --pink:#F7A8C8; --pink-ink:#D9628F; --steel:#264D80; --match:#E01B1B; --danger:#B3261E; --ok:#2E7D4F;
   --occ0:#FFFFFF; --occ1:#F7E5CC; --occ2:#EBBF86; --occ3:#D48A3F;
   --floor:#E3E8F0; --carton:#DFA15E; --zone:#264D80; --wood:#4E3020;
   --brand:#122C58; --brand-2:#1C3D73; --brand-ink:#FFFFFF; --brand-muted:#B9C6DD;
@@ -16,13 +16,13 @@
 }
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
   --bg:#0A1428; --surface:#111E38; --surface-2:#172746; --ink:#E7ECF5; --muted:#9AA8C0; --line:#25365A; --grid:#1A2A4A;
-  --accent:#E3A35F; --accent-ink:#0A1428; --sel:#FF4D4D; --pink:#F59BC0; --pink-ink:#C94F7E; --steel:#86A9DA; --match:#E0B53A; --danger:#F08B82; --ok:#6FC08F;
+  --accent:#E3A35F; --accent-ink:#0A1428; --sel:#FF4D4D; --pink:#F59BC0; --pink-ink:#C94F7E; --steel:#86A9DA; --match:#FF4D4D; --danger:#F08B82; --ok:#6FC08F;
   --occ0:#111E38; --occ1:#46392A; --occ2:#86602F; --occ3:#C98A43;
   --floor:#152443; --carton:#B98345; --zone:#86A9DA; --wood:#5E3B26;
   --brand:#0D2148; --brand-2:#163266; --brand-ink:#FFFFFF; --brand-muted:#A6B6D3; color-scheme:dark}}
 :root[data-theme="dark"]{
   --bg:#0A1428; --surface:#111E38; --surface-2:#172746; --ink:#E7ECF5; --muted:#9AA8C0; --line:#25365A; --grid:#1A2A4A;
-  --accent:#E3A35F; --accent-ink:#0A1428; --sel:#FF4D4D; --pink:#F59BC0; --pink-ink:#C94F7E; --steel:#86A9DA; --match:#E0B53A; --danger:#F08B82; --ok:#6FC08F;
+  --accent:#E3A35F; --accent-ink:#0A1428; --sel:#FF4D4D; --pink:#F59BC0; --pink-ink:#C94F7E; --steel:#86A9DA; --match:#FF4D4D; --danger:#F08B82; --ok:#6FC08F;
   --occ0:#111E38; --occ1:#46392A; --occ2:#86602F; --occ3:#C98A43;
   --floor:#152443; --carton:#B98345; --zone:#86A9DA; --wood:#5E3B26;
   --brand:#0D2148; --brand-2:#163266; --brand-ink:#FFFFFF; --brand-muted:#A6B6D3; color-scheme:dark}
@@ -49,7 +49,7 @@ button,input,select,textarea{font:inherit;color:inherit}
 .search{position:relative;flex:1 1 220px;max-width:340px}
 .search input{width:100%;padding:8px 10px 8px 32px;border:1px solid var(--line);border-radius:6px;background:var(--surface)}
 .search svg{position:absolute;left:10px;top:50%;transform:translateY(-50%);width:14px;height:14px;stroke:var(--muted);fill:none;stroke-width:2}
-.results{position:absolute;z-index:20;top:calc(100% + 4px);left:0;right:0;background:var(--surface);border:1px solid var(--line);border-radius:6px;box-shadow:0 8px 24px rgba(0,0,0,.14);max-height:320px;overflow:auto}
+.results{color:var(--ink);position:absolute;z-index:20;top:calc(100% + 4px);left:0;right:0;background:var(--surface);border:1px solid var(--line);border-radius:6px;box-shadow:0 8px 24px rgba(0,0,0,.14);max-height:320px;overflow:auto}
 .results button{display:flex;justify-content:space-between;gap:10px;width:100%;text-align:left;border:0;background:none;padding:8px 10px;cursor:pointer;border-bottom:1px solid var(--line)}
 .results button:last-child{border-bottom:0}
 .results button:hover,.results button:focus-visible{background:var(--surface-2)}
@@ -149,7 +149,9 @@ button,input,select,textarea{font:inherit;color:inherit}
 .rack .shape{stroke:var(--steel);stroke-width:.08}
 .rack.occ0 .shape{fill:var(--occ0)} .rack.occ1 .shape{fill:var(--occ1)} .rack.occ2 .shape{fill:var(--occ2)} .rack.occ3 .shape{fill:var(--occ3)}
 .rack text{fill:var(--ink);font-family:var(--f-display);font-weight:700;text-anchor:middle;dominant-baseline:central;pointer-events:none}
-.rack.match .shape{stroke:var(--match);stroke-width:.22}
+.rack.match .shape{stroke:var(--match);stroke-width:.26}
+.rack.match .shape.shape{fill:color-mix(in srgb,var(--match) 28%,var(--surface))}
+.rack.match text{fill:var(--ink)}
 .rack.sel .shape{stroke:var(--sel);stroke-width:.26}
 .editing .rack{cursor:grab}
 .rack.dragging{cursor:grabbing;opacity:.85}
