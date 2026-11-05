@@ -698,7 +698,15 @@ function bounds() {
   return { x0, y0, x1, y1 };
 }
 let VB = null; // vue zoomée {x,y,w,h} ; null = cadrage automatique
-function fitVB() { const b = bounds(), M = S.editMode ? 2.5 : 1.6; return { x: b.x0 - M, y: b.y0 - M, w: b.x1 - b.x0 + 2 * M, h: b.y1 - b.y0 + 2 * M + .6 }; }
+function fitVB() {
+  // Cadrage par défaut : le plan est réduit pour laisser libres les boutons du cadre (Modifier le plan, zoom, outils, légende)
+  const b = bounds(), bw = Math.max(b.x1 - b.x0, 1), bh = Math.max(b.y1 - b.y0 + .6, 1);
+  const svg = $("#plan"), W = svg.clientWidth || 800, H = svg.clientHeight || 600;
+  const pl = 20, pr = 64, pt = 60, pb = S.editMode ? 130 : 36;
+  const s = Math.max(1e-3, Math.min((W - pl - pr) / bw, (H - pt - pb) / bh));
+  const ex = Math.max(0, (W - pl - pr - bw * s) / 2), ey = Math.max(0, (H - pt - pb - bh * s) / 2);
+  return { x: b.x0 - (pl + ex) / s, y: b.y0 - (pt + ey) / s, w: W / s, h: H / s };
+}
 const wallTool = () => S.editMode && S.tool !== "etageres";
 
 function renderPlan() {
@@ -1410,6 +1418,7 @@ $("#undo").onclick = undoWalls;
 $("#zIn").onclick = () => { const b = $("#plan").getBoundingClientRect(); zoomAt(b.left + b.width / 2, b.top + b.height / 2, 1.4); };
 $("#zOut").onclick = () => { const b = $("#plan").getBoundingClientRect(); zoomAt(b.left + b.width / 2, b.top + b.height / 2, 1 / 1.4); };
 $("#zFit").onclick = () => { VB = null; renderPlan(); };
+let rzT; addEventListener("resize", () => { clearTimeout(rzT); rzT = setTimeout(() => { if (!VB) renderPlan(); }, 150); });
 $("#addRack").onclick = async () => {
   const c = S.config, zs = c.zones || [];
   const z = zs[0];
