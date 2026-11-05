@@ -1669,10 +1669,13 @@ const setVenteSel = id => { V.venteSel = id; try { localStorage.setItem("vente-a
 const ventesTriees = () => [...V.ventes.values()].sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")) || String(b.creee || "").localeCompare(String(a.creee || "")));
 const nomClient = v => `${v.prenom || ""} ${v.nom || ""}`.trim() || "Client sans nom";
 const ordreVisite = (a, b) => String(a.date || "").localeCompare(String(b.date || "")) || String(a.heure || "").localeCompare(String(b.heure || "")) || String(a.creee || "").localeCompare(String(b.creee || ""));
-// Numéro du client = son rang d'arrivée parmi les visites de la même vente
+// Numéro du client = ordre dans la vente selon l'heure du premier lot coché de chaque visite
+// (un client dont aucun lot n'est encore coché passe après, dans l'ordre des visites)
+const premierVu = v => (v.lots || []).reduce((m, l) => l.vu && (!m || l.vu < m) ? l.vu : m, null);
+const ordreRang = (a, b) => { const pa = premierVu(a), pb = premierVu(b); if (pa && pb && pa !== pb) return pa < pb ? -1 : 1; if (!!pa !== !!pb) return pa ? -1 : 1; return ordreVisite(a, b); };
 function rang(v) {
   if (!v.vente || !V.ventes.has(v.vente)) return null;
-  const l = [...V.list.values()].filter(x => x.vente === v.vente).sort(ordreVisite);
+  const l = [...V.list.values()].filter(x => x.vente === v.vente).sort(ordreRang);
   return l.findIndex(x => x.id === v.id) + 1 || null;
 }
 const ventesDoc = () => T.db.doc("config/ventes");
@@ -1782,7 +1785,7 @@ function listView() {
         } }))));
   }
   const filtre = v => V.venteSel === "toutes" ? true : V.venteSel === "a_ranger" ? (!v.vente || !V.ventes.has(v.vente)) : v.vente === V.venteSel;
-  const vs = tout.filter(filtre).sort((a, b) => vt ? ordreVisite(a, b) : -ordreVisite(a, b));
+  const vs = tout.filter(filtre).sort((a, b) => vt ? ordreRang(a, b) : -ordreVisite(a, b));
   if (!vs.length) { out.push(el("p", { class: "hint", text: !tout.length ? "Aucune visite enregistrée. Créez la première avec « Nouvelle visite »." : V.venteSel === "a_ranger" ? "Toutes les visites sont rangées dans une vente." : "Aucune visite dans cette vente. Appuyez longtemps sur une visite (ou clic droit) pour la ranger ici." })); return out; }
   out.push(el("p", { class: "hint", text: "Appui long sur une visite (clic droit sur ordinateur) pour la ranger dans une vente." }));
   out.push(el("div", { class: "vlist" }, vs.map(v => {
