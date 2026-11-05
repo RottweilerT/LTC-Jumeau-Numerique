@@ -20,7 +20,7 @@ const { chromium } = require('playwright'); const fs = require('fs');
   const openByName = async n => { await p.click(`.vitem:has-text("${n}")`); await p.waitForTimeout(250); };
   await openByName('Zéphirin Bouldoire');
   await p.locator('.ck').first().click(); await p.waitForTimeout(250);
-  await p.click('text=← Toutes les visites'); await openByName('Hortense Vermillard');
+  await p.click('.vtab.all'); await openByName('Hortense Vermillard');
   await p.click('.vtab-go:has-text("Zéphirin")'); await p.waitForTimeout(250);
   console.log('onglets :', await p.locator('.vtab-go').allTextContents(), '| affiché :', await p.textContent('.vhead h2'));
   await p.click('.vtab.all'); for (const n of ['Gaspardin Quintaret', 'Eulalie Pontarlier']) { await openByName(n); await p.click('.vtab.all'); await p.waitForTimeout(200); }
