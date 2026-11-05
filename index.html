@@ -1400,10 +1400,19 @@ function renderResults() {
   box.replaceChildren(); box.hidden = false;
   const rackOnly = [...racks].filter(id => !items.some(i => i.rackId === id)).map(id => S.racks.get(id));
   for (const r of rackOnly.slice(0, 4)) box.append(el("button", { onmousedown: e => e.preventDefault(), onclick: () => pick(r.id) }, el("span", { text: rackName(r) }), el("span", { class: "addr", text: zoneOf(r.zone)?.nom || "" })));
-  for (const it of items.slice(0, 10)) box.append(el("button", { onmousedown: e => e.preventDefault(), onclick: () => pick(it.rackId, it.niveau) },
+  for (const it of items.slice(0, 10)) box.append(el("button", { onmousedown: e => e.preventDefault(), onclick: () => montrer(it) },
     el("span", {}, el("span", { text: it.nom }), it.ref ? el("div", { class: "sub", style: "font-size:12px;color:var(--muted)", text: it.ref + " · " + fmt(it.qte) + " " + (it.unite || "") }) : null),
     el("span", { class: "addr", text: addr(it) })));
   if (!items.length && !rackOnly.length) box.append(el("div", { class: "empty", text: "Aucun article ne correspond à « " + q + " »." }));
+}
+// Lot choisi dans la recherche : on montre seulement le plan avec son emplacement en rouge ;
+// un clic sur l'emplacement ouvre ensuite le détail des niveaux.
+function montrer(it) {
+  S.q = String(it.nom); $("#q").value = S.q; $("#q").blur(); $("#results").hidden = true;
+  S.sel = null; S.form = null; S.rackEdit = false; S.armed = null; VB = null;
+  render();
+  const st = $("#stage"), r = st.getBoundingClientRect();
+  if (r.top < 0 || r.bottom > innerHeight) st.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 function pick(id, lvl) { $("#q").blur(); $("#results").hidden = true; select(id, lvl ?? null); }
 $("#q").addEventListener("input", e => { S.q = e.target.value; renderPlan(); renderResults(); if (S.sel) renderPanel(); if (S.view === "3d") build3D(); });
