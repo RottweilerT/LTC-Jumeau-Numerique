@@ -1,0 +1,24 @@
+const { chromium } = require('playwright'); const fs = require('fs');
+(async () => {
+  const b = await chromium.launch(); const data = JSON.parse(fs.readFileSync('/tmp/real.json', 'utf8')); const errs = [];
+  data.items = { L40339: { lot: 40339, nom: '40339', niveau: 4, rackId: 'R4', unite: 'B5', qte: 1 }, L40337: { lot: 40337, nom: '40337', niveau: 1, rackId: 'ROU46', unite: 'B8', qte: 1 } };
+  const ctx = await b.newContext({ viewport: { width: 390, height: 844 } });
+  await ctx.route('**/*', r => { const u = r.request().url();
+    if (u.includes('firebase-app-compat')) return r.fulfill({ contentType: 'text/javascript', body: fs.readFileSync('tests/fake-firebase.js', 'utf8') });
+    if (u.includes('firebase-firestore-compat')) return r.fulfill({ contentType: 'text/javascript', body: '' });
+    if (u.endsWith('firebase-config.js')) return r.fulfill({ contentType: 'text/javascript', body: 'const FIREBASE_CONFIG = { apiKey: "x", projectId: "test" };' });
+    if (u.startsWith('http://localhost')) return r.continue(); return r.abort(); });
+  const p = await ctx.newPage(); p.on('pageerror', e => errs.push(e.message));
+  await p.goto('http://localhost:8765/importer.html');
+  await p.evaluate(d => { localStorage.setItem('__fakefs', JSON.stringify(d)); localStorage.setItem('jumeau-profil', 'p_x'); localStorage.setItem('jumeau-profil-nom', 'Armand Charrin'); }, data);
+  await p.goto('http://localhost:8765/'); await p.waitForTimeout(1200);
+  await p.fill('#q', '4033'); await p.waitForTimeout(300);
+  console.log('résultats :', await p.locator('#results button').count(), '| en rouge avant :', await p.locator('#plan .rack.match').count());
+  await p.click('#results button:has-text("40339")'); await p.waitForTimeout(500);
+  console.log('carte ouverte :', await p.locator('#float:not([hidden])').count(), '| en rouge :', await p.locator('#plan .rack.match').count(), '| recherche :', await p.inputValue('#q'));
+  await p.screenshot({ path: '/tmp/pick1.png' });
+  await p.locator('#plan .rack.match').click(); await p.waitForTimeout(400);
+  console.log('après clic : carte ouverte :', await p.locator('#float:not([hidden])').count(), '| lot encadré :', await p.locator('#float .chip.hit').count());
+  await p.screenshot({ path: '/tmp/pick2.png' });
+  console.log('erreurs :', errs); await b.close();
+})();
