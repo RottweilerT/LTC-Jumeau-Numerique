@@ -70,6 +70,8 @@ button,input,select,textarea{font:inherit;color:inherit}
 .stage-note{position:absolute;left:12px;bottom:10px;font-family:var(--f-mono);font-size:11px;color:var(--muted);background:var(--surface);padding:2px 6px;border-radius:4px;pointer-events:none}
 .overlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:24px;text-align:center;color:var(--muted)}
 .overlay h2{margin:0;color:var(--ink);font-family:var(--f-display);font-size:24px}
+.stage-acts{position:absolute;top:8px;right:56px;display:flex;flex-wrap:wrap;justify-content:flex-end;gap:6px;z-index:5}
+.stage-acts .btn{min-height:40px;box-shadow:0 2px 8px rgba(0,0,0,.08)}
 .zoom{position:absolute;top:8px;right:8px;display:flex;flex-direction:column;gap:6px}
 .zoom button{width:40px;height:40px;border:1px solid var(--line);background:var(--surface);border-radius:8px;font-size:20px;line-height:1;cursor:pointer;display:grid;place-items:center}
 .zoom svg,.tools svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
@@ -341,8 +343,6 @@ h3{margin:0 0 8px;font-family:var(--f-display);font-size:17px;font-weight:600;le
       <input id="q" type="search" placeholder="Chercher un article, une référence, A2…" autocomplete="off" aria-label="Rechercher">
       <div class="results" id="results" hidden></div>
     </div>
-    <button class="btn plan-only" id="editBtn" hidden>Modifier le plan</button>
-    <button class="btn primary plan-only" id="addRack" hidden>+ Étagère</button>
   </header>
   <div class="main plan-only">
     <section class="stage" id="stage">
@@ -351,6 +351,7 @@ h3{margin:0 0 8px;font-family:var(--f-display);font-size:17px;font-weight:600;le
       <div class="overlay" id="overlay" hidden></div>
       <div class="editflag" id="editflag" hidden></div>
       <div class="float" id="float" hidden role="dialog" aria-label="Détail de l'élément"></div>
+      <div class="stage-acts"><button class="btn" id="editBtn" hidden>Modifier le plan</button><button class="btn primary" id="addRack" hidden>+ Étagère</button></div>
       <div class="zoom" id="zoom">
         <button id="zIn" aria-label="Zoomer">+</button>
         <button id="zOut" aria-label="Dézoomer">−</button>
