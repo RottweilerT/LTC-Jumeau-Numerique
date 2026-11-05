@@ -296,6 +296,22 @@ h3{margin:0 0 8px;font-family:var(--f-display);font-size:17px;font-weight:600;le
 .modal canvas{width:100%;height:200px;background:#fff;border:1px solid var(--line);border-radius:8px;touch-action:none}
 .hist{font-size:12px;color:var(--muted);font-family:var(--f-mono);display:flex;flex-direction:column;gap:2px;max-height:160px;overflow:auto}
 @media (max-width:860px){.visits{overflow:visible}}
+.vform select{padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);font-size:16px;color:var(--ink)}
+.vventes{display:flex;gap:6px;overflow-x:auto;padding:2px 0 4px;scrollbar-width:thin}
+.vchip{flex:none;display:inline-flex;align-items:center;gap:8px;border:1.5px solid var(--line);background:var(--surface);color:var(--ink);border-radius:999px;padding:8px 14px;font-size:14px;font-weight:600;cursor:pointer;max-width:260px}
+.vchip span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.vchip .n{font-family:var(--f-mono);font-size:12px;font-weight:500;background:var(--surface-2);border-radius:999px;padding:1px 7px;color:var(--muted)}
+.vchip.on{background:var(--carton);border-color:var(--carton);color:#12223F}
+.vchip.on .n{background:rgba(255,255,255,.55);color:#12223F}
+.vchip.add{border-style:dashed;color:var(--muted);font-weight:500}
+.vente-tete{flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:space-between}
+.vente-nom{font-family:var(--f-display);font-size:24px;line-height:1.1}
+.vente-ligne{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;font-size:14px}
+.vente-choix{display:flex;flex-direction:column;gap:6px;max-height:50vh;overflow:auto}
+.vente-choix .btn{text-align:left;white-space:normal}
+.vente-choix .btn.on{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 10%,var(--surface))}
+.vitem{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
+.vitem .rang{display:inline-block;margin-right:8px;padding:1px 8px;border-radius:6px;background:var(--brand);color:var(--brand-ink);font-family:var(--f-mono);font-size:13px;vertical-align:3px}
 .vtabs{position:sticky;top:0;z-index:8;display:flex;gap:6px;overflow-x:auto;padding:6px;margin:0 -2px;background:var(--bg);border-bottom:1px solid var(--line);scrollbar-width:thin}
 .vtab{flex:none;display:flex;align-items:stretch;border:1.5px solid var(--line);border-radius:10px;background:var(--surface);max-width:220px}
 .vtab.on{border-color:var(--brand);background:var(--brand);color:var(--brand-ink)}
@@ -1566,6 +1582,12 @@ function start() {
   if (V.sub) return;
   if (!T.db) return;
   V.sub = true;
+  T.db.doc("config/ventes").onSnapshot(s => {
+    const l = (s.exists && s.data().liste) || {};
+    V.ventes = new Map(Object.entries(l).filter(([, x]) => x && x.nom).map(([id, x]) => [id, { id, ...x }]));
+    if (V.venteSel !== "a_ranger" && V.venteSel !== "toutes" && !V.ventes.has(V.venteSel)) V.venteSel = "a_ranger";
+    render();
+  }, () => {});
   T.db.collection("visites").onSnapshot(s => {
     V.list = new Map(s.docs.map(d => [d.id, { id: d.id, ...d.data() }])); V.loaded = true;
     const avant = V.open.length; V.open = V.open.filter(id => V.list.has(id)); if (V.open.length !== avant) saveOpen();
@@ -1640,6 +1662,83 @@ function onglets() {
     }));
 }
 
+/* ---- Ventes : chaque visite peut être rangée dans une vente ---- */
+V.ventes = new Map();
+V.venteSel = (() => { try { return localStorage.getItem("vente-affichee") || "a_ranger"; } catch (_) { return "a_ranger"; } })();
+const setVenteSel = id => { V.venteSel = id; try { localStorage.setItem("vente-affichee", id); } catch (_) {} };
+const ventesTriees = () => [...V.ventes.values()].sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")) || String(b.creee || "").localeCompare(String(a.creee || "")));
+const nomClient = v => `${v.prenom || ""} ${v.nom || ""}`.trim() || "Client sans nom";
+const ordreVisite = (a, b) => String(a.date || "").localeCompare(String(b.date || "")) || String(a.heure || "").localeCompare(String(b.heure || "")) || String(a.creee || "").localeCompare(String(b.creee || ""));
+// Numéro du client = son rang d'arrivée parmi les visites de la même vente
+function rang(v) {
+  if (!v.vente || !V.ventes.has(v.vente)) return null;
+  const l = [...V.list.values()].filter(x => x.vente === v.vente).sort(ordreVisite);
+  return l.findIndex(x => x.id === v.id) + 1 || null;
+}
+const ventesDoc = () => T.db.doc("config/ventes");
+async function creerVente(nom, date) {
+  const id = "v" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+  await ventesDoc().set({ liste: { [id]: { nom, date: date || "", creee: new Date().toISOString(), par: T.uid || "" } } }, { merge: true });
+  V.ventes.set(id, { id, nom, date: date || "" });
+  return id;
+}
+async function majVente(id, data) { await ventesDoc().set({ liste: { [id]: data } }, { merge: true }); }
+async function supprimerVente(id) {
+  const vs = [...V.list.values()].filter(x => x.vente === id);
+  for (const v of vs) await vdoc(v.id).update({ vente: null });
+  await ventesDoc().update({ ["liste." + id]: firebase.firestore.FieldValue.delete() });
+}
+async function ranger(v, venteId) {
+  const avant = v.vente || null;
+  if (avant === venteId) return;
+  await patch(v.id, { vente: venteId || null, historique: hist(V.list.get(v.id) || v, venteId ? "rangee" : "derangee") });
+  toast(venteId ? `Visite de ${nomClient(v)} rangée dans « ${V.ventes.get(venteId)?.nom} »` : `Visite de ${nomClient(v)} retirée de la vente`);
+}
+function modale(titre, contenu) {
+  const close = () => m.remove();
+  const m = el("div", { class: "modal", onclick: e => { if (e.target === m) close(); } }, el("div", { class: "box" }, el("strong", { style: "font-size:18px", text: titre }), ...contenu(close)));
+  document.body.append(m); return close;
+}
+function formVente(close, ok, init = {}) {
+  const nom = el("input", { id: "vt-nom", placeholder: "ex. Vente Collections Décembre 2026", maxlength: 80 }); nom.value = init.nom || "";
+  const date = el("input", { id: "vt-date", type: "date" }); date.value = init.date || "";
+  setTimeout(() => nom.focus(), 30);
+  return el("form", { class: "vform", onsubmit: async e => {
+    e.preventDefault(); const n = nom.value.replace(/\s+/g, " ").trim();
+    if (!n) { toast("Indiquez le nom de la vente.", true); nom.focus(); return; }
+    try { await ok(n, date.value); close(); } catch (_) { toast("Enregistrement impossible. Vérifiez la connexion.", true); }
+  } }, el("label", { class: "full" }, "Nom de la vente (affiché en haut à droite du compte rendu)", nom),
+    el("label", {}, "Date de la vente", date),
+    el("div", { class: "vacts full" }, el("button", { class: "btn primary big", type: "submit", text: init.nom ? "Enregistrer" : "Créer la vente" }), el("button", { class: "btn big", type: "button", text: "Annuler", onclick: close })));
+}
+function nouvelleVente(apres) {
+  modale("Nouvelle vente", close => [formVente(close, async (n, d) => { const id = await creerVente(n, d); toast(`Vente « ${n} » créée`); if (apres) await apres(id); else { setVenteSel(id); render(); } })]);
+}
+function menuRanger(v) {
+  modale(`Ranger la visite de ${nomClient(v)}`, close => {
+    const vts = ventesTriees();
+    return [
+      el("span", { class: "vmeta", text: vts.length ? "Choisissez la vente :" : "Aucune vente pour l'instant : créez-en une." }),
+      el("div", { class: "vente-choix" }, vts.map(x => el("button", { class: "btn big" + (v.vente === x.id ? " on" : ""), type: "button", onclick: async () => { close(); await ranger(v, x.id); } },
+        el("span", { text: x.nom }), x.date ? el("small", { text: " · " + fDate(x.date) }) : null, v.vente === x.id ? el("small", { text: " (actuelle)" }) : null))),
+      el("div", { class: "vacts" },
+        el("button", { class: "btn big", type: "button", text: "+ Nouvelle vente", onclick: () => { close(); nouvelleVente(async id => ranger(v, id)); } }),
+        v.vente ? el("button", { class: "btn big", type: "button", text: "Retirer de la vente", onclick: async () => { close(); await ranger(v, null); } }) : null,
+        el("span", { class: "sp" }),
+        el("button", { class: "btn big", type: "button", text: "Annuler", onclick: close }))];
+  });
+}
+// Appui long (téléphone) ou clic droit (ordinateur) sur une carte de visite
+function appuiLong(node, action) {
+  let t = null, x0 = 0, y0 = 0;
+  const stop = () => { clearTimeout(t); t = null; };
+  node.addEventListener("pointerdown", e => { if (e.button > 0) return; x0 = e.clientX; y0 = e.clientY; stop(); t = setTimeout(() => { t = null; node.dataset.long = "1"; if (navigator.vibrate) try { navigator.vibrate(30); } catch (_) {} action(); }, 550); });
+  node.addEventListener("pointermove", e => { if (t && Math.hypot(e.clientX - x0, e.clientY - y0) > 10) stop(); });
+  ["pointerup", "pointercancel", "pointerleave"].forEach(ev => node.addEventListener(ev, stop));
+  node.addEventListener("contextmenu", e => { e.preventDefault(); stop(); if (!node.dataset.long) action(); });
+  node.addEventListener("click", e => { if (node.dataset.long) { e.stopImmediatePropagation(); e.preventDefault(); delete node.dataset.long; } }, true);
+}
+
 /* ---- Rendu ---- */
 function render() {
   if (V.mode !== "visites") return;
@@ -1658,12 +1757,34 @@ function render() {
 function listView() {
   const out = [];
   out.push(el("div", { class: "vhead" }, el("h2", { text: "Visites clients" }),
-    el("button", { class: "btn primary big", text: "+ Nouvelle visite", onclick: () => { V.form = { nom: "", prenom: "", date: today(), heure: nowHM(), collab: (window.__profil?.().nom || ""), com: "", numero: "", dateVente: (() => { try { return localStorage.getItem("date-vente") || ""; } catch (_) { return ""; } })(), type: "collection", prefixe: "40", lots: { text: "" } }; render(); setTimeout(() => $("#vf-nom")?.focus(), 0); } })));
+    el("button", { class: "btn primary big", text: "+ Nouvelle visite", onclick: () => { V.form = { nom: "", prenom: "", date: today(), heure: nowHM(), collab: (window.__profil?.().nom || ""), com: "", vente: V.ventes.has(V.venteSel) ? V.venteSel : "", type: "collection", prefixe: "40", lots: { text: "" } }; render(); setTimeout(() => $("#vf-nom")?.focus(), 0); } })));
   if (!T.db) { out.push(el("p", { class: "hint", text: "La base Firebase n'est pas disponible : les visites ne peuvent pas être enregistrées." })); return out; }
   if (V.form) out.push(newForm());
   if (!V.loaded) { out.push(el("p", { class: "hint", text: "Chargement des visites…" })); return out; }
-  const vs = [...V.list.values()].sort((a, b) => String(b.date + b.heure).localeCompare(String(a.date + a.heure)));
-  if (!vs.length) { out.push(el("p", { class: "hint", text: "Aucune visite enregistrée. Créez la première avec « Nouvelle visite »." })); return out; }
+  const tout = [...V.list.values()];
+  const nb = id => id === "toutes" ? tout.length : id === "a_ranger" ? tout.filter(v => !v.vente || !V.ventes.has(v.vente)).length : tout.filter(v => v.vente === id).length;
+  const chip = (id, lab) => el("button", { class: "vchip" + (V.venteSel === id ? " on" : ""), "aria-pressed": String(V.venteSel === id), onclick: () => { setVenteSel(id); render(); } },
+    el("span", { text: lab }), el("span", { class: "n", text: String(nb(id)) }));
+  out.push(el("div", { class: "vventes", role: "group", "aria-label": "Ventes" },
+    chip("a_ranger", "À ranger"), ventesTriees().map(x => chip(x.id, x.nom)), chip("toutes", "Toutes"),
+    el("button", { class: "vchip add", text: "+ Nouvelle vente", onclick: () => nouvelleVente() })));
+  const vt = V.ventes.get(V.venteSel);
+  if (vt) {
+    const armedV = V.delVente === vt.id;
+    out.push(el("div", { class: "vcard vente-tete" },
+      el("div", {}, el("div", { class: "eyebrow", text: "Vente" }), el("b", { class: "vente-nom", text: vt.nom }), el("div", { class: "vmeta", text: (vt.date ? "le " + fDate(vt.date) + " · " : "") + `${nb(vt.id)} visite${nb(vt.id) > 1 ? "s" : ""}` })),
+      el("div", { class: "vacts" },
+        el("button", { class: "btn small", text: "Renommer", onclick: () => modale("Modifier la vente", close => [formVente(close, async (n, d) => majVente(vt.id, { nom: n, date: d }), vt)]) }),
+        el("button", { class: "btn small danger" + (armedV ? " armed" : ""), text: armedV ? "Confirmer : supprimer la vente" : "Supprimer la vente", title: "Les visites ne sont pas supprimées : elles retournent dans « À ranger ».", onclick: async () => {
+          if (!armedV) { V.delVente = vt.id; render(); setTimeout(() => { if (V.delVente === vt.id) { V.delVente = null; render(); } }, 6000); return; }
+          V.delVente = null;
+          try { await supprimerVente(vt.id); setVenteSel("a_ranger"); toast("Vente supprimée : ses visites sont dans « À ranger »."); render(); } catch (_) { toast("Suppression impossible. Vérifiez la connexion.", true); }
+        } }))));
+  }
+  const filtre = v => V.venteSel === "toutes" ? true : V.venteSel === "a_ranger" ? (!v.vente || !V.ventes.has(v.vente)) : v.vente === V.venteSel;
+  const vs = tout.filter(filtre).sort((a, b) => vt ? ordreVisite(a, b) : -ordreVisite(a, b));
+  if (!vs.length) { out.push(el("p", { class: "hint", text: !tout.length ? "Aucune visite enregistrée. Créez la première avec « Nouvelle visite »." : V.venteSel === "a_ranger" ? "Toutes les visites sont rangées dans une vente." : "Aucune visite dans cette vente. Appuyez longtemps sur une visite (ou clic droit) pour la ranger ici." })); return out; }
+  out.push(el("p", { class: "hint", text: "Appui long sur une visite (clic droit sur ordinateur) pour la ranger dans une vente." }));
   out.push(el("div", { class: "vlist" }, vs.map(v => {
     const n = (v.lots || []).length, vu = (v.lots || []).filter(l => l.vu).length;
     const open = () => ouvrir(v.id);
@@ -1675,12 +1796,16 @@ function listView() {
       try { await vdoc(v.id).delete(); V.list.delete(v.id); fermer(v.id); toast("Visite supprimée"); }
       catch (err) { toast(err?.code === "invalid_argument" ? "Vous n'avez pas le droit de supprimer cette visite." : "Suppression impossible. Vérifiez la connexion.", true); }
     } });
-    return el("div", { class: "vitem", role: "button", tabindex: 0, onclick: open, onkeydown: e => { if ((e.key === "Enter" || e.key === " ") && e.target === e.currentTarget) { e.preventDefault(); open(); } } },
+    const rk = rang(v), vte = V.ventes.get(v.vente);
+    const card = el("div", { class: "vitem", role: "button", tabindex: 0, onclick: open, onkeydown: e => { if ((e.key === "Enter" || e.key === " ") && e.target === e.currentTarget) { e.preventDefault(); open(); } } },
       el("div", {}, el("span", { class: "chip-s " + (v.statut === "terminee" ? "done" : "live"), text: v.statut === "terminee" ? "Terminée" : "En cours" }), V.open.includes(v.id) ? el("span", { class: "chip-s open", text: "Onglet ouvert" }) : null),
-      el("b", { text: `${v.prenom || ""} ${v.nom || ""}`.trim() || "Client sans nom" }),
-      el("div", { class: "vmeta", text: `${venteLabel(v)} · ${fDate(v.date)} à ${v.heure || "—"}${v.collab ? " · avec " + v.collab : ""}` }),
+      el("b", {}, rk ? el("span", { class: "rang", text: "N° " + rk }) : null, nomClient(v)),
+      el("div", { class: "vmeta", text: `${fDate(v.date)} à ${v.heure || "—"}${v.collab ? " · avec " + v.collab : ""}` }),
+      (V.venteSel === "toutes" || !vt) && vte ? el("div", { class: "vmeta", text: "Vente : " + vte.nom }) : null,
       el("div", { class: "vmeta", text: `${vu} lot${vu > 1 ? "s" : ""} présenté${vu > 1 ? "s" : ""} sur ${n}` }),
-      el("div", { class: "vacts" }, el("span", { class: "sp" }), del));
+      el("div", { class: "vacts" }, el("button", { class: "btn small", text: vte ? "Changer de vente" : "Ranger…", onclick: e => { e.stopPropagation(); menuRanger(v); } }), el("span", { class: "sp" }), del));
+    appuiLong(card, () => menuRanger(V.list.get(v.id) || v));
+    return card;
   })));
   return out;
 }
@@ -1713,8 +1838,7 @@ function newForm() {
     const cat0 = catalog(), coll0 = F.type === "collection", r0 = parseLots(F.lots.text, coll0, F.prefixe.trim(), cat0, []);
     if (!r0.added.length) { toast("Indiquez les lots que le client souhaite voir (saisie ou fichier).", true); $("#vf-paste")?.focus(); return; }
     const t0 = new Date().toISOString();
-    try { if (F.dateVente) localStorage.setItem("date-vente", F.dateVente); } catch (_) {}
-    const data = { typeVente: F.type, prefixe: F.type === "collection" ? F.prefixe.trim() : "", nom: F.nom.trim(), prenom: F.prenom.trim(), date: F.date || today(), heure: F.heure || nowHM(), collab: F.collab.trim(), commentaires: F.com.trim(), numero: (F.numero || "").trim(), dateVente: F.dateVente || "", observations: "", statut: "en_cours", creee: new Date().toISOString(), creePar: T.uid || null, lots: r0.added.map(x => ({ lot: x, ajoute: t0, vu: null })), historique: [{ t: t0, action: "creation", lot: null, par: T.uid || null }, ...r0.added.map(x => ({ t: t0, action: "ajout", lot: x, par: T.uid || null, ...(cat0.has(x) ? {} : { horsBase: true }) }))], signatures: {} };
+    const data = { typeVente: F.type, prefixe: F.type === "collection" ? F.prefixe.trim() : "", nom: F.nom.trim(), prenom: F.prenom.trim(), date: F.date || today(), heure: F.heure || nowHM(), collab: F.collab.trim(), commentaires: F.com.trim(), vente: F.vente && V.ventes.has(F.vente) ? F.vente : null, observations: "", statut: "en_cours", creee: new Date().toISOString(), creePar: T.uid || null, lots: r0.added.map(x => ({ lot: x, ajoute: t0, vu: null })), historique: [{ t: t0, action: "creation", lot: null, par: T.uid || null }, ...r0.added.map(x => ({ t: t0, action: "ajout", lot: x, par: T.uid || null, ...(cat0.has(x) ? {} : { horsBase: true }) }))], signatures: {} };
     try { const ref = await T.db.collection("visites").add(data); V.form = null; if (!ouvrir(ref.id)) render(); toast("Visite créée avec " + lotsMsg(r0), !!r0.unknown.length); render(); }
     catch (err) { toast("Impossible de créer la visite. Vérifiez la connexion.", true); }
   } },
@@ -1723,7 +1847,7 @@ function newForm() {
     el("div", { class: "vform" },
       inp("Nom du client *", "nom", "text"), inp("Prénom du client", "prenom", "text"),
       inp("Date de la visite", "date", "date"), inp("Heure de début", "heure", "time"),
-      inp("N° du client (compte rendu)", "numero", "text"), inp("Date de la vente", "dateVente", "date"),
+      (() => { const s = el("select", { id: "vf-vente" }, el("option", { value: "", text: "— À ranger plus tard —" }), ventesTriees().map(x => el("option", { value: x.id, text: x.nom }))); s.value = F.vente || ""; s.addEventListener("change", () => { F.vente = s.value; }); return el("label", { class: "full" }, "Vente", s); })(),
       inp("Collaborateur accompagnant (facultatif)", "collab", "text", true),
       inp("Commentaires", "com", "textarea", true)),
     el("div", { class: "eyebrow", text: "Lots que le client souhaite voir *" }),
@@ -1739,6 +1863,10 @@ function detail(v) {
     el("h2", { text: `${v.prenom || ""} ${v.nom || ""}`.trim() }),
     el("span", { class: "chip-s " + (done ? "done" : "live"), text: done ? "Terminée" : "En cours" })));
   out.push(el("div", { class: "vmeta", text: `${venteLabel(v)} · visite du ${fDate(v.date)} à ${v.heure || "—"}${v.collab ? " · accompagné par " + v.collab : ""}` }));
+  { const vte = V.ventes.get(v.vente), rk = rang(v);
+    out.push(el("div", { class: "vente-ligne" },
+      el("span", {}, vte ? el("span", {}, "Vente : ", el("b", { text: vte.nom }), rk ? ` · client n° ${rk}` : "") : el("span", { class: "hint", text: "Pas encore rangée dans une vente (le n° du client et le nom de la vente apparaissent sur le compte rendu une fois rangée)." })),
+      el("button", { class: "btn small", text: vte ? "Changer de vente" : "Ranger dans une vente…", onclick: () => menuRanger(v) }))); }
 
   // Progression
   out.push(el("div", { class: "vcard prog" },
@@ -1791,10 +1919,7 @@ function detail(v) {
 
   // Commentaires, observations, signatures
   const ta = (lab, id, key) => { const t = el("textarea", { id }); t.value = v[key] || ""; t.addEventListener("change", () => patch(v.id, { [key]: t.value })); return el("label", { class: "full" }, lab, t); };
-  const fi = (lab, id, key, type) => { const t = el("input", { id, type }); t.value = v[key] || ""; t.addEventListener("change", () => patch(v.id, { [key]: t.value.trim() })); return el("label", {}, lab, t); };
   out.push(el("div", { class: "vcard" }, el("div", { class: "vform" },
-    fi("N° du client (compte rendu)", "vd-num", "numero", "text"),
-    fi("Date de la vente", "vd-dv", "dateVente", "date"),
     ta("Commentaires de la visite", "vd-com", "commentaires"),
     ta("Observations du client (reprises dans le compte rendu)", "vd-obs", "observations"))));
   const sg = v.signatures || {};
@@ -1823,7 +1948,7 @@ function detail(v) {
 
   // Historique
   const h = (v.historique || []).slice().reverse();
-  const lbl = { creation: "Visite créée", ajout: "Lot ajouté", retrait: "Lot retiré", vu: "Lot présenté", vu_annule: "Statut « Vu » annulé", terminee: "Visite terminée", reouverture: "Visite rouverte", export: "Compte rendu exporté", signature: "Signature enregistrée" };
+  const lbl = { creation: "Visite créée", ajout: "Lot ajouté", retrait: "Lot retiré", vu: "Lot présenté", vu_annule: "Statut « Vu » annulé", terminee: "Visite terminée", rangee: "Rangée dans une vente", derangee: "Retirée de la vente", reouverture: "Visite rouverte", export: "Compte rendu exporté", signature: "Signature enregistrée" };
   out.push(el("details", { class: "vcard" }, el("summary", { text: `Historique des actions (${h.length})` }),
     el("div", { class: "hist" }, h.map(x => el("div", { text: `${fDT(x.t)} — ${lbl[x.action] || x.action}${x.lot ? " " + x.lot : ""}${x.ancien ? " (était vu à " + fT(x.ancien) + ")" : ""}` })))));
   return out;
@@ -1998,8 +2123,13 @@ async function exportPdf(v) {
   doc.text(doc.splitTextToSize((v.nom || "").toUpperCase(), 55)[0] || "", 41, 43);
   doc.text(doc.splitTextToSize(v.prenom || "", 55)[0] || "", 41, 56.2);
   doc.setFontSize(11);
-  souligne((v.typeVente || "collection") === "collection" ? "Vente Collections" : "Vente Single Lots", 130, 37.5);
-  { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v.dateVente || "");
+  // En haut à droite : nom de la vente où la visite est rangée (sinon le type de vente), puis sa date
+  const vte = V.ventes.get(v.vente);
+  { const titre = vte ? vte.nom : ((v.typeVente || "collection") === "collection" ? "Vente Collections" : "Vente Single Lots");
+    let fs = 11; doc.setFontSize(fs); while (fs > 7.5 && doc.getTextWidth(titre) > 70) { fs -= .5; doc.setFontSize(fs); }
+    const lignes = doc.getTextWidth(titre) > 70 ? doc.splitTextToSize(titre, 70).slice(0, 2) : [titre];
+    lignes.forEach((t, k) => souligne(t, 130, 37.5 - (lignes.length - 1 - k) * 4.6)); doc.setFontSize(11); }
+  { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec((vte ? vte.date : v.dateVente) || "");
     if (m) {
       const d = +m[3], reste = ` ${MOIS[+m[2] - 1]} ${m[1]}`;
       let x = 130; doc.text(String(d), x, 42.5); x += doc.getTextWidth(String(d));
@@ -2008,10 +2138,10 @@ async function exportPdf(v) {
       doc.setLineWidth(.3); doc.line(130, 43.4, x, 43.4);
     } }
   doc.text("N° :", 130, 56.2); doc.setLineWidth(.3); doc.line(140, 57.4, 163.5, 57.4);
-  doc.setFont("helvetica", "normal"); if (v.numero) doc.text(String(v.numero), 141.5, 56.2);
+  doc.setFont("helvetica", "bold"); doc.setFontSize(12); { const rk = rang(v) || v.numero; if (rk) doc.text(String(rk), 141.5, 56.2); } doc.setFontSize(11);
   doc.setFont("helvetica", "bold"); doc.text("J'engage ma responsabilité en cas de dégradation d'un lot", 41.5, 66.5);
   doc.setFont("helvetica", "normal");
-  doc.text("Date :", 15.7, 80); doc.text(new Date(sd || (v.date ? v.date + "T12:00:00" : Date.now())).toLocaleDateString("fr-FR"), 29, 80);
+  doc.text("Date :", 15.7, 80); doc.text(v.date ? fDate(v.date) : new Date(sd || Date.now()).toLocaleDateString("fr-FR"), 29, 80);
   doc.text("Signature :", 72.5, 80);
   doc.setLineWidth(.35); doc.rect(96, 75.7, 69, 16.6);
   if (sg.client?.img) { try { doc.addImage(sg.client.img, "JPEG", 97, 76.4, 67, 15.2); } catch (_) {} }
@@ -2024,15 +2154,17 @@ async function exportPdf(v) {
   const TOP1 = 107, BOT1 = 270, TOP = 14, BOT = 286;
   const sameDay = l => new Date(l.vu).toLocaleDateString("sv-SE") === v.date;
   const tousJour = seen.every(sameDay);
-  const rows = seen.map(l => { const e = info(cat, l.lot); return [l.lot, e.locs.join(" + ") || "—", fmtFormat(e) || "", sameDay(l) ? fT(l.vu) : fDT(l.vu)]; });
+  const hm = iso => new Date(iso).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+  const jm = iso => new Date(iso).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" });
+  const rows = seen.map(l => { const e = info(cat, l.lot); return [l.lot, e.idlot ? String(e.idlot) : "—", e.qte ? String(e.qte) : "—", e.unite || "—", sameDay(l) ? hm(l.vu) : jm(l.vu) + " " + hm(l.vu)]; });
   const configs = [];
-  for (const [fs, rh] of [[9, 5], [8, 4.4], [7, 3.8], [6.2, 3.3], [5.5, 2.9], [5, 2.6]]) for (const g of [1, 2, 3]) if (!(g === 3 && fs > 7) && !(g === 2 && fs > 8)) configs.push({ fs, rh, g });
+  for (const [fs, rh] of [[9, 5], [8, 4.4], [7, 3.8], [6.2, 3.3], [5.5, 2.9], [5, 2.6]]) for (const g of [1, 2, 3]) if (!(g === 3 && fs > 8) && !(g === 2 && fs > 9)) configs.push({ fs, rh, g });
   const cap = c => { const hh = c.rh + .6; return c.g * (Math.floor((BOT1 - TOP1 - hh) / c.rh) + Math.floor((BOT - OBS - TOP - hh) / c.rh)); };
   const C = configs.find(c => cap(c) >= rows.length) || configs[configs.length - 1];
   const gap = 5, gw = (W - 2 * M - (C.g - 1) * gap) / C.g;
-  const cw = (C.g === 1 ? [.16, .34, .26, .24] : [.2, .3, .27, .23]).map(f => f * gw);
+  const cw = (tousJour ? [.22, .24, .16, .18, .2] : [.2, .22, .14, .16, .28]).map(f => f * gw);
   const fit = (s, w) => { s = String(s); if (doc.getTextWidth(s) <= w) return s; while (s.length > 1 && doc.getTextWidth(s + "…") > w) s = s.slice(0, -1); return s + "…"; };
-  const heads = ["N° lot", "Localisation", "Format", tousJour ? "Heure" : "Présenté le"];
+  const heads = ["N° lot", "Réf.", "Cont.", "Type", tousJour ? "Heure" : "Vu le"];
   let page = 1, i = 0, y = TOP1, yMax = TOP1;
   while (i < rows.length) {
     yMax = 0;
