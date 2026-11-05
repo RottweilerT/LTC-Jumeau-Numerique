@@ -1792,8 +1792,8 @@ function setMode(m) {
 $("#tabPlan").onclick = () => setMode("plan");
 $("#tabVis").onclick = () => setMode("visites");
 
-/* ---- Plusieurs visites ouvertes en même temps (onglets, 4 au maximum) ---- */
-const MAX_OUVERTES = 4;
+/* ---- Plusieurs visites ouvertes en même temps (onglets, 10 au maximum) ---- */
+const MAX_OUVERTES = 10;
 V.open = (() => { try { return JSON.parse(localStorage.getItem("visites-ouvertes") || "[]").filter(x => typeof x === "string").slice(0, MAX_OUVERTES); } catch (_) { return []; } })();
 V.etat = {};
 const saveOpen = () => { try { localStorage.setItem("visites-ouvertes", JSON.stringify(V.open)); } catch (_) {} };
