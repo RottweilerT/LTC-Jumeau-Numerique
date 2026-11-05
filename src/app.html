@@ -1658,7 +1658,7 @@ function render() {
 function listView() {
   const out = [];
   out.push(el("div", { class: "vhead" }, el("h2", { text: "Visites clients" }),
-    el("button", { class: "btn primary big", text: "+ Nouvelle visite", onclick: () => { V.form = { nom: "", prenom: "", date: today(), heure: nowHM(), collab: (window.__profil?.().nom || ""), com: "", type: "collection", prefixe: "40", lots: { text: "" } }; render(); setTimeout(() => $("#vf-nom")?.focus(), 0); } })));
+    el("button", { class: "btn primary big", text: "+ Nouvelle visite", onclick: () => { V.form = { nom: "", prenom: "", date: today(), heure: nowHM(), collab: (window.__profil?.().nom || ""), com: "", numero: "", dateVente: (() => { try { return localStorage.getItem("date-vente") || ""; } catch (_) { return ""; } })(), type: "collection", prefixe: "40", lots: { text: "" } }; render(); setTimeout(() => $("#vf-nom")?.focus(), 0); } })));
   if (!T.db) { out.push(el("p", { class: "hint", text: "La base Firebase n'est pas disponible : les visites ne peuvent pas être enregistrées." })); return out; }
   if (V.form) out.push(newForm());
   if (!V.loaded) { out.push(el("p", { class: "hint", text: "Chargement des visites…" })); return out; }
@@ -1713,7 +1713,8 @@ function newForm() {
     const cat0 = catalog(), coll0 = F.type === "collection", r0 = parseLots(F.lots.text, coll0, F.prefixe.trim(), cat0, []);
     if (!r0.added.length) { toast("Indiquez les lots que le client souhaite voir (saisie ou fichier).", true); $("#vf-paste")?.focus(); return; }
     const t0 = new Date().toISOString();
-    const data = { typeVente: F.type, prefixe: F.type === "collection" ? F.prefixe.trim() : "", nom: F.nom.trim(), prenom: F.prenom.trim(), date: F.date || today(), heure: F.heure || nowHM(), collab: F.collab.trim(), commentaires: F.com.trim(), observations: "", statut: "en_cours", creee: new Date().toISOString(), creePar: T.uid || null, lots: r0.added.map(x => ({ lot: x, ajoute: t0, vu: null })), historique: [{ t: t0, action: "creation", lot: null, par: T.uid || null }, ...r0.added.map(x => ({ t: t0, action: "ajout", lot: x, par: T.uid || null, ...(cat0.has(x) ? {} : { horsBase: true }) }))], signatures: {} };
+    try { if (F.dateVente) localStorage.setItem("date-vente", F.dateVente); } catch (_) {}
+    const data = { typeVente: F.type, prefixe: F.type === "collection" ? F.prefixe.trim() : "", nom: F.nom.trim(), prenom: F.prenom.trim(), date: F.date || today(), heure: F.heure || nowHM(), collab: F.collab.trim(), commentaires: F.com.trim(), numero: (F.numero || "").trim(), dateVente: F.dateVente || "", observations: "", statut: "en_cours", creee: new Date().toISOString(), creePar: T.uid || null, lots: r0.added.map(x => ({ lot: x, ajoute: t0, vu: null })), historique: [{ t: t0, action: "creation", lot: null, par: T.uid || null }, ...r0.added.map(x => ({ t: t0, action: "ajout", lot: x, par: T.uid || null, ...(cat0.has(x) ? {} : { horsBase: true }) }))], signatures: {} };
     try { const ref = await T.db.collection("visites").add(data); V.form = null; if (!ouvrir(ref.id)) render(); toast("Visite créée avec " + lotsMsg(r0), !!r0.unknown.length); render(); }
     catch (err) { toast("Impossible de créer la visite. Vérifiez la connexion.", true); }
   } },
@@ -1722,6 +1723,7 @@ function newForm() {
     el("div", { class: "vform" },
       inp("Nom du client *", "nom", "text"), inp("Prénom du client", "prenom", "text"),
       inp("Date de la visite", "date", "date"), inp("Heure de début", "heure", "time"),
+      inp("N° du client (compte rendu)", "numero", "text"), inp("Date de la vente", "dateVente", "date"),
       inp("Collaborateur accompagnant (facultatif)", "collab", "text", true),
       inp("Commentaires", "com", "textarea", true)),
     el("div", { class: "eyebrow", text: "Lots que le client souhaite voir *" }),
@@ -1789,7 +1791,10 @@ function detail(v) {
 
   // Commentaires, observations, signatures
   const ta = (lab, id, key) => { const t = el("textarea", { id }); t.value = v[key] || ""; t.addEventListener("change", () => patch(v.id, { [key]: t.value })); return el("label", { class: "full" }, lab, t); };
+  const fi = (lab, id, key, type) => { const t = el("input", { id, type }); t.value = v[key] || ""; t.addEventListener("change", () => patch(v.id, { [key]: t.value.trim() })); return el("label", {}, lab, t); };
   out.push(el("div", { class: "vcard" }, el("div", { class: "vform" },
+    fi("N° du client (compte rendu)", "vd-num", "numero", "text"),
+    fi("Date de la vente", "vd-dv", "dateVente", "date"),
     ta("Commentaires de la visite", "vd-com", "commentaires"),
     ta("Observations du client (reprises dans le compte rendu)", "vd-obs", "observations"))));
   const sg = v.signatures || {};
@@ -1798,7 +1803,7 @@ function detail(v) {
     sg[k] ? el("span", { class: "vmeta", text: "Signée le " + fDT(sg[k].t) }) : null,
     el("button", { class: "btn small", text: sg[k] ? "Refaire la signature" : "Signer sur l'écran", onclick: () => sigPad(v, k, lab) }));
   out.push(el("div", { class: "vcard" }, el("div", { class: "eyebrow", text: "Signatures (facultatives, sinon à la main sur le document imprimé)" }),
-    el("div", { class: "sigrow" }, sigBox("client", "Signature du client"), sigBox("rep", "Signature du représentant"))));
+    el("div", { class: "sigrow" }, sigBox("client", "Signature du client"))));
 
   // Actions finales
   out.push(el("div", { class: "vacts" },
@@ -1974,76 +1979,96 @@ async function exportPdf(v) {
   const seen = (v.lots || []).filter(l => l.vu).sort((a, b) => String(a.vu).localeCompare(String(b.vu)));
   const client = `${v.prenom || ""} ${v.nom || ""}`.trim();
   const doc = new window.jspdf.jsPDF({ unit: "mm", format: "a4" });
-  const W = 210, M = 12, BOT = 284, BLOCK = 98;
-  // En-tête compact
-  doc.setFont("helvetica", "bold"); doc.setFontSize(15); doc.text("Compte rendu de présentation des lots", M, 17);
-  doc.setDrawColor(223, 161, 94); doc.setLineWidth(.7); doc.line(M, 20, W - M, 20);
-  doc.setFontSize(9.5);
-  const info1 = [["Client : ", client || "—"], ["Visite : ", `${fDate(v.date)}${v.heure ? " à " + v.heure : ""}`]];
-  if (v.collab) info1.push(["Accompagné par : ", v.collab]);
-  info1.push(["Lots présentés : ", String(seen.length)]);
-  let x0 = M;
-  info1.forEach(([k, val]) => { doc.setFont("helvetica", "bold"); doc.text(k, x0, 26); x0 += doc.getTextWidth(k); doc.setFont("helvetica", "normal"); doc.text(val, x0, 26); x0 += doc.getTextWidth(val) + 7; });
-  const TOP1 = 31, TOP = 14;
-  // Liste : choix automatique de la taille et du nombre de colonnes pour tenir sur un recto verso
+  const W = 210, M = 12;
+  // Fond du formulaire « Le Timbre Classique » : en-tête et pied de page scannés (fichiers du site)
+  const img = async src => { try { const r = await fetch(src); if (!r.ok) return null; const bl = await r.blob(); return await new Promise(res => { const f = new FileReader(); f.onload = () => res(f.result); f.onerror = () => res(null); f.readAsDataURL(bl); }); } catch (_) { return null; } };
+  const [ent, pied] = await Promise.all([img("entete.png"), img("pied.png")]);
+  const MOIS = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"];
+  const souligne = (t, x, y) => { doc.text(t, x, y); doc.setLineWidth(.3); doc.line(x, y + .9, x + doc.getTextWidth(t), y + .9); };
+  const sg = v.signatures || {}, sd = sg.client?.t;
+
+  // ---- Page 1 : le formulaire ----
+  if (ent) doc.addImage(ent, "PNG", 33.9, 9.6, 144.2, 19.3);
+  else { doc.setFont("times", "normal"); doc.setFontSize(30); doc.text("LE TIMBRE CLASSIQUE", W / 2, 20, { align: "center" }); doc.setFontSize(12); doc.text("PARIS  -  GENÈVE", W / 2, 27.5, { align: "center" }); }
+  doc.setTextColor(0); doc.setDrawColor(0);
+  doc.setFont("helvetica", "normal"); doc.setFontSize(11);
+  doc.text("NOM :", 22, 43); doc.text("PRENOM :", 19, 56.2);
+  doc.setLineWidth(.3); doc.line(40, 44.3, 96, 44.3); doc.line(40, 57.4, 96, 57.4);
+  doc.setFont("helvetica", "bold"); doc.setFontSize(12);
+  doc.text(doc.splitTextToSize((v.nom || "").toUpperCase(), 55)[0] || "", 41, 43);
+  doc.text(doc.splitTextToSize(v.prenom || "", 55)[0] || "", 41, 56.2);
+  doc.setFontSize(11);
+  souligne((v.typeVente || "collection") === "collection" ? "Vente Collections" : "Vente Single Lots", 130, 37.5);
+  { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v.dateVente || "");
+    if (m) {
+      const d = +m[3], reste = ` ${MOIS[+m[2] - 1]} ${m[1]}`;
+      let x = 130; doc.text(String(d), x, 42.5); x += doc.getTextWidth(String(d));
+      if (d === 1) { doc.setFontSize(7); doc.text("ER", x + .2, 40.6); x += doc.getTextWidth("ER") + .4; doc.setFontSize(11); }
+      doc.text(reste, x, 42.5); x += doc.getTextWidth(reste);
+      doc.setLineWidth(.3); doc.line(130, 43.4, x, 43.4);
+    } }
+  doc.text("N° :", 130, 56.2); doc.setLineWidth(.3); doc.line(140, 57.4, 163.5, 57.4);
+  doc.setFont("helvetica", "normal"); if (v.numero) doc.text(String(v.numero), 141.5, 56.2);
+  doc.setFont("helvetica", "bold"); doc.text("J'engage ma responsabilité en cas de dégradation d'un lot", 41.5, 66.5);
+  doc.setFont("helvetica", "normal");
+  doc.text("Date :", 15.7, 80); doc.text(new Date(sd || (v.date ? v.date + "T12:00:00" : Date.now())).toLocaleDateString("fr-FR"), 29, 80);
+  doc.text("Signature :", 72.5, 80);
+  doc.setLineWidth(.35); doc.rect(96, 75.7, 69, 16.6);
+  if (sg.client?.img) { try { doc.addImage(sg.client.img, "JPEG", 97, 76.4, 67, 15.2); } catch (_) {} }
+  if (pied) doc.addImage(pied, "PNG", 24, 273.7, 150.2, 18.6);
+
+  // ---- Liste des lots présentés : sous le formulaire, puis au verso ----
+  const OBS = v.observations ? 30 : 0;
+  doc.setFont("helvetica", "bold"); doc.setFontSize(10.5);
+  doc.text(`Lots présentés : ${seen.length}`, M + 3, 104);
+  const TOP1 = 107, BOT1 = 270, TOP = 14, BOT = 286;
   const sameDay = l => new Date(l.vu).toLocaleDateString("sv-SE") === v.date;
+  const tousJour = seen.every(sameDay);
   const rows = seen.map(l => { const e = info(cat, l.lot); return [l.lot, e.locs.join(" + ") || "—", fmtFormat(e) || "", sameDay(l) ? fT(l.vu) : fDT(l.vu)]; });
   const configs = [];
-  for (const [fs, rh] of [[9, 5], [8, 4.4], [7, 3.8], [6.2, 3.3], [5.5, 2.9], [5, 2.6]]) for (const g of [1, 2, 3]) configs.push({ fs, rh, g });
-  const cap = c => { const hh = c.rh + .6; return c.g * (Math.floor((BOT - TOP1 - hh) / c.rh) + Math.floor((BOT - BLOCK - TOP - hh) / c.rh)); };
-  const okc = configs.filter(c => !(c.g === 3 && c.fs > 7) && !(c.g === 2 && c.fs > 8));
-  const C = okc.find(c => cap(c) >= rows.length) || okc[okc.length - 1];
+  for (const [fs, rh] of [[9, 5], [8, 4.4], [7, 3.8], [6.2, 3.3], [5.5, 2.9], [5, 2.6]]) for (const g of [1, 2, 3]) if (!(g === 3 && fs > 7) && !(g === 2 && fs > 8)) configs.push({ fs, rh, g });
+  const cap = c => { const hh = c.rh + .6; return c.g * (Math.floor((BOT1 - TOP1 - hh) / c.rh) + Math.floor((BOT - OBS - TOP - hh) / c.rh)); };
+  const C = configs.find(c => cap(c) >= rows.length) || configs[configs.length - 1];
   const gap = 5, gw = (W - 2 * M - (C.g - 1) * gap) / C.g;
-  const fr = C.g === 1 ? [.16, .34, .26, .24] : [.2, .3, .27, .23];
-  const cw = fr.map(f => f * gw);
+  const cw = (C.g === 1 ? [.16, .34, .26, .24] : [.2, .3, .27, .23]).map(f => f * gw);
   const fit = (s, w) => { s = String(s); if (doc.getTextWidth(s) <= w) return s; while (s.length > 1 && doc.getTextWidth(s + "…") > w) s = s.slice(0, -1); return s + "…"; };
-  const heads = ["N° lot", "Localisation", "Format", sameDayAll() ? "Heure" : "Présenté le"];
-  function sameDayAll() { return seen.every(sameDay); }
-  let page = 1, i = 0, y = TOP1;
+  const heads = ["N° lot", "Localisation", "Format", tousJour ? "Heure" : "Présenté le"];
+  let page = 1, i = 0, y = TOP1, yMax = TOP1;
   while (i < rows.length) {
+    yMax = 0;
     const top = page === 1 ? TOP1 : TOP;
-    const bottom = (page >= 2 && rows.length - i <= C.g * Math.floor((BOT - BLOCK - top - C.rh - .6) / C.rh)) ? BOT - BLOCK : BOT;
-    const perCol = Math.floor((bottom - top - C.rh - .6) / C.rh);
+    const perFull = c => Math.floor((c - top - C.rh - .6) / C.rh);
+    const bottom = page === 1 ? BOT1 : (rows.length - i <= C.g * perFull(BOT - OBS) ? BOT - OBS : BOT);
+    const perCol = perFull(bottom);
     for (let g = 0; g < C.g && i < rows.length; g++) {
       const gx = M + g * (gw + gap);
-      doc.setFillColor(27, 33, 39); doc.rect(gx, top, gw, C.rh + .6, "F");
+      doc.setFillColor(18, 44, 88); doc.rect(gx, top, gw, C.rh + .6, "F");
       doc.setTextColor(255); doc.setFont("helvetica", "bold"); doc.setFontSize(C.fs);
       let cx = gx; heads.forEach((t, k) => { doc.text(fit(t, cw[k] - 1.6), cx + .8, top + C.rh * .72 + .3); cx += cw[k]; });
       doc.setTextColor(0);
       y = top + C.rh + .6;
       for (let r = 0; r < perCol && i < rows.length; r++, i++) {
-        if (r % 2) { doc.setFillColor(242, 243, 240); doc.rect(gx, y, gw, C.rh, "F"); }
+        if (r % 2) { doc.setFillColor(243, 244, 246); doc.rect(gx, y, gw, C.rh, "F"); }
         cx = gx;
         rows[i].forEach((t, k) => { doc.setFont("helvetica", k === 0 ? "bold" : "normal"); doc.text(fit(t, cw[k] - 1.6), cx + .8, y + C.rh * .72); cx += cw[k]; });
         y += C.rh;
       }
-      doc.setDrawColor(200); doc.setLineWidth(.2); doc.rect(gx, top, gw, y - top);
+      doc.setDrawColor(190); doc.setLineWidth(.2); doc.rect(gx, top, gw, y - top);
+      yMax = Math.max(yMax, y);
     }
     if (i < rows.length) { doc.addPage(); page++; }
   }
-  // Bloc déclaration + signatures en bas du verso
-  if (!rows.length) y = TOP1;
-  if (y > BOT - BLOCK) { doc.addPage(); page++; }
-  y = BOT - BLOCK + 6;
-  doc.setFontSize(10); doc.setFont("helvetica", "normal");
-  const decl = doc.splitTextToSize(`Je soussigné(e), ${client || "...................................."}, reconnais avoir pris connaissance des lots listés ci-dessus lors de la visite effectuée à la date indiquée.`, W - 2 * M);
-  doc.text(decl, M, y); y += decl.length * 4.6 + 4;
-  doc.setFont("helvetica", "bold"); doc.text("Observations :", M, y); doc.setFont("helvetica", "normal"); y += 2.5;
-  doc.setDrawColor(180); doc.setLineWidth(.3); doc.rect(M, y, W - 2 * M, 20);
-  if (v.observations) { doc.setFontSize(9); doc.text(doc.splitTextToSize(v.observations, W - 2 * M - 6).slice(0, 4), M + 3, y + 5); doc.setFontSize(10); }
-  y += 27;
-  const bw = (W - 2 * M - 8) / 2, sg = v.signatures || {};
-  [["Signature du client", "client", M], ["Signature du représentant", "rep", M + bw + 8]].forEach(([lab, k, x]) => {
-    doc.setFont("helvetica", "bold"); doc.text(lab, x, y);
-    doc.rect(x, y + 2.5, bw, 30);
-    if (sg[k]?.img) { try { doc.addImage(sg[k].img, "JPEG", x + 2, y + 4, bw - 4, Math.min(27, (bw - 4) / 3)); } catch (_) {} }
-  });
-  y += 39;
-  const sd = sg.client?.t || sg.rep?.t;
-  doc.setFont("helvetica", "bold"); doc.text("Date de signature :", M, y); doc.setFont("helvetica", "normal");
-  doc.text(sd ? new Date(sd).toLocaleDateString("fr-FR") : "____ / ____ / ________", M + 38, y);
+  if (!rows.length) { doc.setFont("helvetica", "normal"); doc.setFontSize(10); doc.text("Aucun lot présenté.", M + 3, 112); yMax = 114; }
+  y = yMax;
+  // Observations du client (si renseignées), en fin de liste
+  if (v.observations) {
+    if ((page === 1 ? BOT1 : BOT) - y < OBS) { doc.addPage(); page++; y = TOP; }
+    y += 7; doc.setTextColor(0); doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.text("Observations :", M, y);
+    doc.setDrawColor(150); doc.setLineWidth(.3); doc.rect(M, y + 2, W - 2 * M, 19);
+    doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.text(doc.splitTextToSize(v.observations, W - 2 * M - 6).slice(0, 4), M + 3, y + 7);
+  }
   const pages = doc.getNumberOfPages();
-  for (let i = 1; i <= pages; i++) { doc.setPage(i); doc.setFontSize(8); doc.setTextColor(120); doc.text(`Généré le ${new Date().toLocaleString("fr-FR")} · page ${i}/${pages}`, M, 291); doc.setTextColor(0); }
+  for (let k = 1; k <= pages; k++) { doc.setPage(k); doc.setFont("helvetica", "normal"); doc.setFontSize(7); doc.setTextColor(140); doc.text(`${[v.prenom, v.nom].filter(Boolean).join(" ")} · généré le ${new Date().toLocaleString("fr-FR")} · page ${k}/${pages}`, W - M, 295.5, { align: "right" }); doc.setTextColor(0); }
   const blob = doc.output("blob");
   const fn = `Compte-rendu_${(v.nom || "client").replace(/[^\w\-]+/g, "_")}_${v.date || today()}.pdf`;
   let dl = null; try { dl = await claude.use("downloads"); } catch (_) {}
