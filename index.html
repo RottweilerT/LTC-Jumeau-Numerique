@@ -186,7 +186,12 @@
     if (!db) return;
     await remiseAZero();
     await creerEquipe();
-    if (!ID) connexion(); else { badge(); surveiller(); }
+    if (!ID) connexion();
+    else {
+      badge(); surveiller();
+      // Dernière visite : notée à chaque ouverture du site (seulement si le profil existe dans la base)
+      db.collection("personnes").doc(ID).get({ source: "server" }).then(s => { if (s.exists) s.ref.set({ vu: new Date().toISOString() }, { merge: true }).catch(() => {}); }).catch(() => {});
+    }
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", demarrer); else demarrer();
 })();
