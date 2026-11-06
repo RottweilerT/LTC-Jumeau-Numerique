@@ -1666,7 +1666,8 @@ function onglets() {
 V.ventes = new Map();
 V.venteSel = (() => { try { return localStorage.getItem("vente-affichee") || "a_ranger"; } catch (_) { return "a_ranger"; } })();
 const setVenteSel = id => { V.venteSel = id; try { localStorage.setItem("vente-affichee", id); } catch (_) {} };
-const ventesTriees = () => [...V.ventes.values()].sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")) || String(b.creee || "").localeCompare(String(a.creee || "")));
+// Ventes de la plus proche à la plus lointaine (date croissante) ; celles sans date à la fin
+const ventesTriees = () => [...V.ventes.values()].sort((a, b) => (!a.date) - (!b.date) || String(a.date || "").localeCompare(String(b.date || "")) || String(a.creee || "").localeCompare(String(b.creee || "")));
 const nomClient = v => `${v.prenom || ""} ${v.nom || ""}`.trim() || "Client sans nom";
 const ordreVisite = (a, b) => String(a.date || "").localeCompare(String(b.date || "")) || String(a.heure || "").localeCompare(String(b.heure || "")) || String(a.creee || "").localeCompare(String(b.creee || ""));
 // Numéro du client = ordre dans la vente selon l'heure du premier lot coché de chaque visite
