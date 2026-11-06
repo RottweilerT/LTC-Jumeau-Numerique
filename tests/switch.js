@@ -1,0 +1,21 @@
+const { chromium } = require('playwright'); const fs = require('fs');
+(async () => {
+  const b = await chromium.launch(); const data = JSON.parse(fs.readFileSync('/tmp/demo.json', 'utf8')); const errs = [];
+  data.personnes = { u_old: { nom: 'Armand' }, p_b: { nom: 'Romain Carpentier' } };
+  const ctx = await b.newContext({ viewport: { width: 1280, height: 800 } });
+  await ctx.route('**/*', r => { const u = r.request().url();
+    if (u.includes('firebase-app-compat')) return r.fulfill({ contentType: 'text/javascript', body: fs.readFileSync('tests/fake-firebase.js', 'utf8') });
+    if (u.includes('firebase-firestore-compat')) return r.fulfill({ contentType: 'text/javascript', body: '' });
+    if (u.endsWith('firebase-config.js')) return r.fulfill({ contentType: 'text/javascript', body: 'const FIREBASE_CONFIG = { apiKey: "x", projectId: "test" };' });
+    if (u.startsWith('http://localhost')) return r.continue(); return r.abort(); });
+  const p = await ctx.newPage(); p.on('pageerror', e => errs.push(e.message));
+  await p.goto('http://localhost:8765/importer.html');
+  await p.evaluate(d => { localStorage.clear(); localStorage.setItem('__fakefs', JSON.stringify(d)); localStorage.setItem('jumeau-appareil', 'u_old'); localStorage.setItem('jumeau-nom', 'Armand'); }, data);
+  await p.goto('http://localhost:8765/'); await p.waitForTimeout(1000);
+  console.log('badge :', await p.textContent('#profilBtn'));
+  await p.click('#profilBtn'); await p.click('#profilBtn'); await p.waitForTimeout(1000);
+  console.log('page connexion :', await p.locator('#login').count());
+  await p.click('.login-p:has-text("Romain")'); await p.waitForTimeout(300);
+  await p.reload(); await p.waitForTimeout(800);
+  console.log('après rechargement :', await p.textContent('#profilBtn'), errs); await b.close();
+})();

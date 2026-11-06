@@ -23,9 +23,11 @@
 
   // ----- Profil -----
   // Ancienne version : un identifiant par appareil + prénom. On le reprend tel quel comme profil.
+  // (une seule fois : les anciennes clés sont ensuite effacées, sinon le changement de profil ramenait toujours l'ancien)
   if (!ls.get("jumeau-profil") && ls.get("jumeau-appareil") && ls.get("jumeau-nom")) {
     ls.set("jumeau-profil", ls.get("jumeau-appareil")); ls.set("jumeau-profil-nom", ls.get("jumeau-nom"));
   }
+  ls.del("jumeau-appareil"); ls.del("jumeau-nom");
   let ID = ls.get("jumeau-profil"), NOM = ls.get("jumeau-profil-nom") || "";
   let choisi; const pret = new Promise(r => { choisi = r; });
   if (ID || !db) choisi();
@@ -133,7 +135,7 @@
       b = document.createElement("button"); b.id = "profilBtn"; b.className = "btn profil-btn"; b.type = "button";
       b.title = "Changer de profil";
       b.onclick = () => {
-        if (b.dataset.armed) { ls.del("jumeau-profil"); ls.del("jumeau-profil-nom"); location.reload(); return; }
+        if (b.dataset.armed) { deconnecter(); return; }
         b.dataset.armed = "1"; b.textContent = "Changer de profil ?";
         setTimeout(() => { delete b.dataset.armed; b.textContent = "👤 " + NOM; }, 4000);
       };
@@ -142,7 +144,7 @@
     b.textContent = "👤 " + NOM;
   }
 
-  function deconnecter() { ls.del("jumeau-profil"); ls.del("jumeau-profil-nom"); location.reload(); }
+  function deconnecter() { ["jumeau-profil", "jumeau-profil-nom", "jumeau-appareil", "jumeau-nom"].forEach(k => ls.del(k)); location.reload(); }
 
   // Remise à zéro demandée le 04/11/2026 : tous les profils sont effacés une seule fois (le premier appareil qui ouvre le site s'en charge).
   const REMISE = 1;
