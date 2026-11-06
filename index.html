@@ -501,6 +501,8 @@ h3{margin:0 0 8px;font-family:var(--f-display);font-size:17px;font-weight:600;le
 .vchip .n{font-family:var(--f-mono);font-size:12px;font-weight:500;background:var(--surface-2);border-radius:999px;padding:1px 7px;color:var(--muted)}
 .vchip.on{background:var(--carton);border-color:var(--carton);color:#12223F}
 .vchip.on .n{background:rgba(255,255,255,.55);color:#12223F}
+.vventes.sous{margin-top:-6px;padding:6px 8px;background:var(--surface-2);border-radius:12px}
+.vventes.sous .vchip{font-size:13px;padding:6px 12px}
 .vchip.add{border-style:dashed;color:var(--muted);font-weight:500}
 .vente-tete{flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:space-between}
 .vente-nom{font-family:var(--f-display);font-size:24px;line-height:1.1}
@@ -1783,7 +1785,7 @@ function start() {
   T.db.doc("config/ventes").onSnapshot(s => {
     const l = (s.exists && s.data().liste) || {};
     V.ventes = new Map(Object.entries(l).filter(([, x]) => x && x.nom).map(([id, x]) => [id, { id, ...x }]));
-    if (V.venteSel !== "a_ranger" && V.venteSel !== "toutes" && !V.ventes.has(V.venteSel)) V.venteSel = "a_ranger";
+    if (!["a_ranger", "toutes", "passees"].includes(V.venteSel) && !V.ventes.has(V.venteSel)) V.venteSel = "a_ranger";
     render();
   }, () => {});
   T.db.collection("visites").onSnapshot(s => {
@@ -1868,6 +1870,10 @@ const setVenteSel = id => { V.venteSel = id; try { localStorage.setItem("vente-a
 const ventesTriees = () => [...V.ventes.values()].sort((a, b) => (!a.date) - (!b.date) || String(a.date || "").localeCompare(String(b.date || "")) || String(a.creee || "").localeCompare(String(b.creee || "")));
 const nomClient = v => `${v.prenom || ""} ${v.nom || ""}`.trim() || "Client sans nom";
 const ordreVisite = (a, b) => String(a.date || "").localeCompare(String(b.date || "")) || String(a.heure || "").localeCompare(String(b.heure || "")) || String(a.creee || "").localeCompare(String(b.creee || ""));
+// Ventes passées : date de la vente antérieure à aujourd'hui (rangées dans l'onglet « Ventes passées », la plus récente d'abord)
+const estPassee = x => !!(x && x.date && x.date < today());
+const ventesAVenir = () => ventesTriees().filter(x => !estPassee(x));
+const ventesPassees = () => ventesTriees().filter(estPassee).reverse();
 // Numéro du client = ordre dans la vente selon l'heure du premier lot coché de chaque visite
 // (un client dont aucun lot n'est encore coché passe après, dans l'ordre des visites)
 const premierVu = v => (v.lots || []).reduce((m, l) => l.vu && (!m || l.vu < m) ? l.vu : m, null);
@@ -1918,11 +1924,12 @@ function nouvelleVente(apres) {
 }
 function menuRanger(v) {
   modale(`Ranger la visite de ${nomClient(v)}`, close => {
-    const vts = ventesTriees();
+    const vts = ventesTriees(), av = ventesAVenir(), pa = ventesPassees();
+    const bt = x => el("button", { class: "btn big" + (v.vente === x.id ? " on" : ""), type: "button", onclick: async () => { close(); await ranger(v, x.id); } },
+      el("span", { text: x.nom }), x.date ? el("small", { text: " · " + fDate(x.date) }) : null, v.vente === x.id ? el("small", { text: " (actuelle)" }) : null);
     return [
       el("span", { class: "vmeta", text: vts.length ? "Choisissez la vente :" : "Aucune vente pour l'instant : créez-en une." }),
-      el("div", { class: "vente-choix" }, vts.map(x => el("button", { class: "btn big" + (v.vente === x.id ? " on" : ""), type: "button", onclick: async () => { close(); await ranger(v, x.id); } },
-        el("span", { text: x.nom }), x.date ? el("small", { text: " · " + fDate(x.date) }) : null, v.vente === x.id ? el("small", { text: " (actuelle)" }) : null))),
+      el("div", { class: "vente-choix" }, av.map(bt), pa.length ? el("div", { class: "eyebrow", style: "margin-top:6px", text: "Ventes passées" }) : null, pa.map(bt)),
       el("div", { class: "vacts" },
         el("button", { class: "btn big", type: "button", text: "+ Nouvelle vente", onclick: () => { close(); nouvelleVente(async id => ranger(v, id)); } }),
         v.vente ? el("button", { class: "btn big", type: "button", text: "Retirer de la vente", onclick: async () => { close(); await ranger(v, null); } }) : null,
@@ -1950,6 +1957,7 @@ function render() {
   const sc = { root: root.scrollTop, win: window.scrollY, list: root.querySelector(".addlist")?.scrollTop || 0 };
   root.replaceChildren(...[onglets(), ...(V.cur && V.list.get(V.cur) ? detail(V.list.get(V.cur)) : listView())].filter(Boolean));
   const al = root.querySelector(".addlist"); if (al) al.scrollTop = sc.list;
+  root.querySelectorAll(".vventes").forEach(r => { const c = r.querySelector(".vchip.on"); if (c) { const l = c.offsetLeft - r.offsetLeft; if (l < r.scrollLeft || l + c.offsetWidth > r.scrollLeft + r.clientWidth) r.scrollLeft = Math.max(0, l - 8); } });
   const tb = root.querySelector(".vtabs"), on = tb?.querySelector(".vtab.on");
   if (tb && on) { const l = on.offsetLeft - tb.offsetLeft; if (l < tb.scrollLeft || l + on.offsetWidth > tb.scrollLeft + tb.clientWidth) tb.scrollLeft = Math.max(0, l - 8); }
   root.scrollTop = sc.root; if (Math.abs(window.scrollY - sc.win) > 1) window.scrollTo(0, sc.win);
@@ -1964,17 +1972,22 @@ function listView() {
   if (V.form) out.push(newForm());
   if (!V.loaded) { out.push(el("p", { class: "hint", text: "Chargement des visites…" })); return out; }
   const tout = [...V.list.values()];
-  const nb = id => id === "toutes" ? tout.length : id === "a_ranger" ? tout.filter(v => !v.vente || !V.ventes.has(v.vente)).length : tout.filter(v => v.vente === id).length;
-  const chip = (id, lab) => el("button", { class: "vchip" + (V.venteSel === id ? " on" : ""), "aria-pressed": String(V.venteSel === id), onclick: () => { setVenteSel(id); render(); } },
+  const passees = ventesPassees(), idsPasses = new Set(passees.map(x => x.id));
+  const nb = id => id === "toutes" ? tout.length : id === "a_ranger" ? tout.filter(v => !v.vente || !V.ventes.has(v.vente)).length : id === "passees" ? tout.filter(v => idsPasses.has(v.vente)).length : tout.filter(v => v.vente === id).length;
+  const dansPassees = V.venteSel === "passees" || idsPasses.has(V.venteSel);
+  const chip = (id, lab, on) => el("button", { class: "vchip" + ((on ?? V.venteSel === id) ? " on" : ""), "aria-pressed": String(on ?? V.venteSel === id), onclick: () => { setVenteSel(id); render(); } },
     el("span", { text: lab }), el("span", { class: "n", text: String(nb(id)) }));
   out.push(el("div", { class: "vventes", role: "group", "aria-label": "Ventes" },
-    chip("a_ranger", "À ranger"), ventesTriees().map(x => chip(x.id, x.nom)), chip("toutes", "Toutes"),
+    chip("a_ranger", "À ranger"), ventesAVenir().map(x => chip(x.id, x.nom)),
+    passees.length ? chip("passees", "Ventes passées", dansPassees) : null, chip("toutes", "Toutes"),
     el("button", { class: "vchip add", text: "+ Nouvelle vente", onclick: () => nouvelleVente() })));
+  if (dansPassees) out.push(el("div", { class: "vventes sous", role: "group", "aria-label": "Ventes passées" },
+    passees.map(x => chip(x.id, x.nom + (x.date ? " · " + fDate(x.date) : "")))));
   const vt = V.ventes.get(V.venteSel);
   if (vt) {
     const armedV = V.delVente === vt.id;
     out.push(el("div", { class: "vcard vente-tete" },
-      el("div", {}, el("div", { class: "eyebrow", text: "Vente" }), el("b", { class: "vente-nom", text: vt.nom }), el("div", { class: "vmeta", text: (vt.date ? "le " + fDate(vt.date) + " · " : "") + `${nb(vt.id)} visite${nb(vt.id) > 1 ? "s" : ""}` })),
+      el("div", {}, el("div", { class: "eyebrow", text: estPassee(vt) ? "Vente passée" : "Vente" }), el("b", { class: "vente-nom", text: vt.nom }), el("div", { class: "vmeta", text: (vt.date ? "le " + fDate(vt.date) + " · " : "") + `${nb(vt.id)} visite${nb(vt.id) > 1 ? "s" : ""}` })),
       el("div", { class: "vacts" },
         el("button", { class: "btn small", text: "Renommer", onclick: () => modale("Modifier la vente", close => [formVente(close, async (n, d) => majVente(vt.id, { nom: n, date: d }), vt)]) }),
         el("button", { class: "btn small danger" + (armedV ? " armed" : ""), text: armedV ? "Confirmer : supprimer la vente" : "Supprimer la vente", title: "Les visites ne sont pas supprimées : elles retournent dans « À ranger ».", onclick: async () => {
@@ -1983,7 +1996,7 @@ function listView() {
           try { await supprimerVente(vt.id); setVenteSel("a_ranger"); toast("Vente supprimée : ses visites sont dans « À ranger »."); render(); } catch (_) { toast("Suppression impossible. Vérifiez la connexion.", true); }
         } }))));
   }
-  const filtre = v => V.venteSel === "toutes" ? true : V.venteSel === "a_ranger" ? (!v.vente || !V.ventes.has(v.vente)) : v.vente === V.venteSel;
+  const filtre = v => V.venteSel === "toutes" ? true : V.venteSel === "a_ranger" ? (!v.vente || !V.ventes.has(v.vente)) : V.venteSel === "passees" ? idsPasses.has(v.vente) : v.vente === V.venteSel;
   const vs = tout.filter(filtre).sort((a, b) => vt ? ordreRang(a, b) : -ordreVisite(a, b));
   if (!vs.length) { out.push(el("p", { class: "hint", text: !tout.length ? "Aucune visite enregistrée. Créez la première avec « Nouvelle visite »." : V.venteSel === "a_ranger" ? "Toutes les visites sont rangées dans une vente." : "Aucune visite dans cette vente. Appuyez longtemps sur une visite (ou clic droit) pour la ranger ici." })); return out; }
   out.push(el("p", { class: "hint", text: "Appui long sur une visite (clic droit sur ordinateur) pour la ranger dans une vente." }));
