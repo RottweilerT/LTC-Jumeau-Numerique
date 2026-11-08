@@ -1,6 +1,6 @@
 {
-  "name": "LTC – Jumeau numérique du bâtiment",
-  "short_name": "Jumeau LTC",
+  "name": "LTC Jumeau numérique",
+  "short_name": "LTC Jumeau",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

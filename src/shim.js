@@ -74,7 +74,7 @@
     const box = document.createElement("div");
     box.id = "login"; box.className = "login";
     box.innerHTML = `<div class="login-card">
-      <div class="login-head"><img src="logo-96.png?v=3" alt="" width="64" height="64"><div><small>LTC · Jumeau numérique</small><h1>Qui êtes-vous ?</h1></div></div>
+      <div class="login-head"><img src="logo-96.png?v=3" alt="" width="64" height="64"><div><small>LTC Jumeau numérique</small><h1>Qui êtes-vous ?</h1></div></div>
       <p class="login-hint">Choisissez votre profil. Il restera enregistré sur cet appareil et apparaîtra à côté de vos modifications.</p>
       <input type="search" class="login-q" placeholder="Rechercher un nom…" aria-label="Rechercher un profil" hidden>
       <div class="login-list" role="list"><p class="login-hint">Chargement des profils…</p></div>

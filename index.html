@@ -74,7 +74,7 @@
     const box = document.createElement("div");
     box.id = "login"; box.className = "login";
     box.innerHTML = `<div class="login-card">
-      <div class="login-head"><img src="logo-96.png?v=3" alt="" width="64" height="64"><div><small>LTC · Jumeau numérique</small><h1>Qui êtes-vous ?</h1></div></div>
+      <div class="login-head"><img src="logo-96.png?v=3" alt="" width="64" height="64"><div><small>LTC Jumeau numérique</small><h1>Qui êtes-vous ?</h1></div></div>
       <p class="login-hint">Choisissez votre profil. Il restera enregistré sur cet appareil et apparaîtra à côté de vos modifications.</p>
       <input type="search" class="login-q" placeholder="Rechercher un nom…" aria-label="Rechercher un profil" hidden>
       <div class="login-list" role="list"><p class="login-hint">Chargement des profils…</p></div>
@@ -196,7 +196,7 @@
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", demarrer); else demarrer();
 })();
 </script>
-<title>Jumeau numérique du bâtiment</title>
+<title>LTC Jumeau numérique</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
@@ -559,7 +559,7 @@ h3{margin:0 0 8px;font-family:var(--f-display);font-size:17px;font-weight:600;le
 <div class="app" id="app">
   <header class="bar">
     <img class="logo" src="logo-96.png?v=3" alt="" width="48" height="48">
-    <div class="brand"><small id="brandSub">LTC · Jumeau numérique</small><h1 id="bname">Bâtiment</h1></div>
+    <div class="brand"><small id="brandSub">Bâtiment</small><h1 id="bname">LTC Jumeau numérique</h1></div>
     <div class="seg tabs" role="tablist" aria-label="Onglets">
       <button id="tabPlan" role="tab" aria-pressed="true">Plan</button>
       <button id="tabVis" role="tab" aria-pressed="false">Visites clients</button>
@@ -698,8 +698,8 @@ function searchResults() {
 /* ---------- Rendu global ---------- */
 function render() {
   const c = S.config;
-  $("#bname").textContent = c?.nom || "Bâtiment";
-  $("#brandSub").textContent = "LTC · Jumeau numérique";
+  $("#bname").textContent = "LTC Jumeau numérique";
+  $("#brandSub").textContent = c?.nom || "Bâtiment";
   $("#v2").setAttribute("aria-pressed", S.view === "2d");
   $("#v3").setAttribute("aria-pressed", S.view === "3d");
   const canEditPlan = S.canWrite && !S.offline && !!c;
