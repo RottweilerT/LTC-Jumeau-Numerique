@@ -1,0 +1,32 @@
+const { chromium } = require('playwright'); const fs = require('fs');
+(async () => {
+  const b = await chromium.launch(); const data = JSON.parse(fs.readFileSync('/tmp/demo.json', 'utf8')); const errs = [];
+  const ctx = await b.newContext({ viewport: { width: 1280, height: 900 } });
+  await ctx.route('**/*', r => { const u = r.request().url();
+    if (u.includes('firebase-app-compat')) return r.fulfill({ contentType: 'text/javascript', body: fs.readFileSync('tests/fake-firebase.js', 'utf8') });
+    if (u.includes('firebase-firestore-compat')) return r.fulfill({ contentType: 'text/javascript', body: '' });
+    if (u.endsWith('firebase-config.js')) return r.fulfill({ contentType: 'text/javascript', body: 'const FIREBASE_CONFIG = { apiKey: "x", projectId: "test" };' });
+    if (u.startsWith('http://localhost')) return r.continue(); return r.abort(); });
+  const p = await ctx.newPage(); p.on('pageerror', e => errs.push(e.message));
+  await p.goto('http://localhost:8765/importer.html');
+  await p.evaluate(d => { localStorage.clear(); localStorage.setItem('__fakefs', JSON.stringify(d)); localStorage.setItem('jumeau-profil', 'p_a'); localStorage.setItem('jumeau-profil-nom', 'Armand Charrin'); }, data);
+  await p.goto('http://localhost:8765/'); await p.waitForTimeout(900);
+  await p.click('#tabVis'); await p.click('.vchip:has-text("Collections")'); await p.click('.vitem:has-text("Desfresnes")'); await p.waitForTimeout(300);
+  const row = () => p.locator('.vtable tbody tr').first();
+  await row().locator('button:has-text("Revu")').click(); await p.waitForTimeout(250);
+  await row().locator('button:has-text("Revu")').click(); await p.waitForTimeout(250);
+  console.log('heures :', await row().locator('td.time').innerText());
+  await row().locator('button:has-text("Annoter")').click(); await p.waitForTimeout(200);
+  await p.fill('.note-edit', 'Le client trouve le timbre aminci au verso.'); await p.click('.note-box button:has-text("Enregistrer")'); await p.waitForTimeout(300);
+  await p.locator('.vtable tbody tr').nth(1).locator('button:has-text("Annoter")').click(); await p.fill('.note-edit', 'Intéressé, demande le prix de réserve.'); await p.click('.note-box button:has-text("Enregistrer")'); await p.waitForTimeout(300);
+  console.log('récap :', (await p.locator('.recap-l').allInnerTexts()).map(s => s.replace(/\n/g, ' | ')));
+  await p.click('.filters button:has-text("Lots annotés")'); await p.waitForTimeout(200);
+  console.log('filtre annotés :', await p.locator('.vtable tbody tr').count());
+  await p.screenshot({ path: '/tmp/annot.png', fullPage: false });
+  // annuler un passage
+  await p.click('.filters button:has-text("Tous")'); await row().locator('button[title="Annuler le dernier « revu »"]').click(); await p.click('button:has-text("Oui, annuler")'); await p.waitForTimeout(250);
+  console.log('après annulation :', await row().locator('td.time').innerText());
+  await p.click('.vtab.all'); await p.click('.vchip:has-text("Collections")'); await p.click('.vente-tete button:has-text("Lots annotés")'); await p.waitForTimeout(300);
+  console.log('modale :', await p.locator('.modal .vmeta').first().innerText());
+  await p.screenshot({ path: '/tmp/annot2.png' }); console.log(errs); await b.close();
+})();

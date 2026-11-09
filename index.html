@@ -513,6 +513,22 @@ h3{margin:0 0 8px;font-family:var(--f-display);font-size:17px;font-weight:600;le
 .vitem{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
 .vitem .rang{display:inline-block;margin-right:8px;padding:1px 8px;border-radius:6px;background:var(--brand);color:var(--brand-ink);font-family:var(--f-mono);font-size:13px;vertical-align:3px}
 .notes-txt{flex:1;min-height:60vh;width:100%;padding:14px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);font:16px/1.55 var(--f-body);resize:vertical}
+.lot-acts{display:flex;flex-direction:column;align-items:flex-start;gap:6px}
+.btn.revu{white-space:nowrap}
+.xbtn.small{font-size:16px;padding:2px 6px}
+.revu-h{font-size:12px;color:var(--accent)}
+.note-btn.on{border-color:var(--accent);color:var(--accent);font-weight:600}
+.note-txt{font-size:13px;font-style:italic;color:var(--steel);margin-top:4px;white-space:pre-wrap;max-width:280px}
+.vtable tr.noted td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
+.note-row td{background:color-mix(in srgb,var(--accent) 7%,transparent)}
+.note-box{display:flex;flex-direction:column;gap:8px}
+.note-edit{min-height:70px;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink);font-size:16px}
+.recap-notes{display:flex;flex-direction:column;gap:8px}
+.recap-l{border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--surface)}
+.recap-l .note-txt{max-width:none}
+.recap-v{display:flex;flex-direction:column;gap:6px;padding-bottom:6px}
+.recap-vn{font-size:15px}
+.recap-c{font-weight:600}
 .vtabs{position:sticky;top:0;z-index:8;display:flex;gap:6px;overflow-x:auto;padding:6px;margin:0 -2px;background:var(--bg);border-bottom:1px solid var(--line);scrollbar-width:thin}
 .vtab{flex:none;display:flex;align-items:stretch;border:1.5px solid var(--line);border-radius:10px;background:var(--surface);max-width:220px}
 .vtab.on{border-color:var(--brand);background:var(--brand);color:var(--brand-ink)}
@@ -1977,6 +1993,35 @@ function appuiLong(node, action) {
   node.addEventListener("click", e => { if (node.dataset.long) { e.stopImmediatePropagation(); e.preventDefault(); delete node.dataset.long; } }, true);
 }
 
+/* ---- Annotations ---- */
+function recapLigne(l, e, client) {
+  const revus = (l.revus || []).length;
+  return el("div", { class: "recap-l" },
+    el("div", { class: "recap-t" }, el("b", { text: l.lot }), e && e.idlot ? el("span", { class: "sub", text: " Réf. " + e.idlot }) : null, client ? el("span", { class: "recap-c", text: " · " + client }) : null,
+      l.vu ? el("span", { class: "sub", text: ` · vu à ${fT(l.vu)}${revus ? ` · revu ${revus} fois` : ""}` }) : null),
+    el("div", { class: "note-txt", text: "« " + l.note + " »" }));
+}
+async function exportNotes(vs, nom) {
+  const cat = catalog(), q = s => '"' + String(s ?? "").replace(/"/g, '""') + '"';
+  const lignes = [["Client", "Date de visite", "N° de lot", "Réf.", "Annotation", "Vu à", "Revu (nombre)", "Heures des passages"].map(q).join(";")];
+  for (const v of vs) for (const l of (v.lots || []).filter(l => l.note)) {
+    const e = info(cat, l.lot);
+    lignes.push([nomClient(v), fDate(v.date), l.lot, e.idlot || "", l.note, l.vu ? fT(l.vu) : "", (l.revus || []).length, [l.vu, ...(l.revus || [])].filter(Boolean).map(fT).join(" / ")].map(q).join(";"));
+  }
+  let dl = null; try { dl = await claude.use("downloads"); } catch (_) {}
+  if (!dl) { toast("Le téléchargement n'est pas disponible ici.", true); return; }
+  try { await dl.save({ filename: nom, data: "\ufeff" + lignes.join("\r\n") }); toast("Récapitulatif téléchargé"); } catch (e) { if (e?.code !== "declined") toast("Téléchargement impossible.", true); }
+}
+function recapVente(titre, vs) {
+  const cat = catalog(), avec = vs.filter(v => (v.lots || []).some(l => l.note)).sort(ordreRang);
+  const n = avec.reduce((s, v) => s + v.lots.filter(l => l.note).length, 0);
+  modale(`Lots annotés · ${titre}`, close => [
+    el("span", { class: "vmeta", text: n ? `${n} annotation${n > 1 ? "s" : ""} dans ${avec.length} visite${avec.length > 1 ? "s" : ""}` : "Aucune annotation dans ces visites." }),
+    el("div", { class: "recap-notes", style: "max-height:60vh;overflow:auto" }, avec.map(v => el("div", { class: "recap-v" }, el("b", { class: "recap-vn", text: (rang(v) ? "N° " + rang(v) + " · " : "") + nomClient(v) + " · " + fDate(v.date) }),
+      v.lots.filter(l => l.note).map(l => recapLigne(l, info(cat, l.lot)))))),
+    el("div", { class: "vacts" }, n ? el("button", { class: "btn primary", text: "Télécharger (Excel/CSV)", onclick: () => exportNotes(avec, `Annotations_${titre.replace(/[^\w\-]+/g, "_")}.csv`) }) : null, el("span", { class: "sp" }), el("button", { class: "btn", text: "Fermer", onclick: close }))]);
+}
+
 /* ---- Rendu ---- */
 function render() {
   if (V.mode !== "visites") return;
@@ -2018,6 +2063,7 @@ function listView() {
     out.push(el("div", { class: "vcard vente-tete" },
       el("div", {}, el("div", { class: "eyebrow", text: estPassee(vt) ? "Vente passée" : "Vente" }), el("b", { class: "vente-nom", text: vt.nom }), el("div", { class: "vmeta", text: (vt.date ? "le " + fDate(vt.date) + " · " : "") + `${nb(vt.id)} visite${nb(vt.id) > 1 ? "s" : ""}` })),
       el("div", { class: "vacts" },
+        el("button", { class: "btn small", text: "Lots annotés", onclick: () => recapVente(vt.nom, tout.filter(v => v.vente === vt.id)) }),
         el("button", { class: "btn small", text: "Renommer", onclick: () => modale("Modifier la vente", close => [formVente(close, async (n, d) => majVente(vt.id, { nom: n, date: d }), vt)]) }),
         el("button", { class: "btn small danger" + (armedV ? " armed" : ""), text: armedV ? "Confirmer : supprimer la vente" : "Supprimer la vente", title: "Les visites ne sont pas supprimées : elles retournent dans « À ranger ».", onclick: async () => {
           if (!armedV) { V.delVente = vt.id; render(); setTimeout(() => { if (V.delVente === vt.id) { V.delVente = null; render(); } }, 6000); return; }
@@ -2120,13 +2166,14 @@ function detail(v) {
   // Filtres + ajout
   const fb = (k, lab) => el("button", { "aria-pressed": V.filter === k, text: lab, onclick: () => { V.filter = k; render(); } });
   out.push(el("div", { class: "vacts" },
-    el("div", { class: "filters" }, fb("tous", `Tous les lots (${n})`), fb("apresenter", `Lots à présenter (${n - vu})`), fb("vus", `Lots déjà vus (${vu})`)),
+    el("div", { class: "filters" }, fb("tous", `Tous les lots (${n})`), fb("apresenter", `Lots à présenter (${n - vu})`), fb("vus", `Lots déjà vus (${vu})`), fb("notes", `Lots annotés (${lots.filter(l => l.note).length})`)),
     el("span", { class: "sp" }),
     el("button", { class: "btn" + (V.adding ? " on" : ""), text: V.adding ? "Fermer l'ajout" : "+ Ajouter des lots", onclick: () => { V.adding = !V.adding; V.addSel = new Set(); V.addQ = ""; render(); } })));
   if (V.adding) out.push(addBox(v, cat));
 
   // Tableau
-  const rows = lots.filter(l => V.filter === "tous" || (V.filter === "vus" ? l.vu : !l.vu));
+  const rows = lots.filter(l => V.filter === "tous" || (V.filter === "notes" ? !!l.note : V.filter === "vus" ? l.vu : !l.vu));
+  const majLot = (lot, f) => lots.map(x => x.lot === lot ? f(x) : x);
   const tb = el("tbody");
   for (const l of rows) {
     const e = info(cat, l.lot), seen = !!l.vu;
@@ -2137,29 +2184,59 @@ function detail(v) {
         patch(v.id, { lots: lots.map(x => x.lot === l.lot ? { ...x, vu: t } : x), historique: hist(v, "vu", l.lot, { heure: t }) });
       } else { ck.checked = true; V.confirm = { lot: l.lot, kind: "uncheck" }; render(); }
     });
-    tb.append(el("tr", { class: seen ? "seen" : "" },
+    const revus = l.revus || [];
+    const heures = seen ? [l.vu, ...revus].map((t, i) => el("div", { class: i ? "revu-h" : "" }, i ? `${i + 1}e fois · ${fT(t)}` : (revus.length ? "1re fois · " : "") + fT(t))) : ["—"];
+    const btnRevu = seen ? el("button", { class: "btn small revu", title: "Le client revoit ce lot : l'heure est enregistrée", text: "↻ Revu", onclick: () => {
+      const t = new Date().toISOString();
+      patch(v.id, { lots: majLot(l.lot, x => ({ ...x, revus: [...(x.revus || []), t] })), historique: hist(v, "revu", l.lot, { heure: t }) });
+    } }) : null;
+    const annuleRevu = revus.length ? el("button", { class: "xbtn small", title: "Annuler le dernier « revu »", "aria-label": "Annuler le dernier passage du lot " + l.lot, text: "↶", onclick: () => { V.confirm = { lot: l.lot, kind: "unrevu" }; render(); } }) : null;
+    const btnNote = el("button", { class: "btn small note-btn" + (l.note ? " on" : ""), title: l.note ? "Modifier l'annotation" : "Annoter ce lot (remarque du client)", text: l.note ? "✎ Note" : "✎ Annoter", onclick: () => { V.noteEdit = l.lot; render(); setTimeout(() => $("#note-" + l.lot)?.focus(), 30); } });
+    tb.append(el("tr", { class: (seen ? "seen" : "") + (l.note ? " noted" : "") },
       el("td", {}, ck),
-      el("td", {}, el("div", { class: "lotno", text: l.lot }), e.idlot ? el("div", { class: "sub", text: "Réf. " + e.idlot }) : null),
+      el("td", {}, el("div", { class: "lotno", text: l.lot }), e.idlot ? el("div", { class: "sub", text: "Réf. " + e.idlot }) : null, l.note && V.noteEdit !== l.lot ? el("div", { class: "note-txt", text: "« " + l.note + " »" }) : null),
       el("td", {}, e.locs.join(" + ")),
       el("td", {}, fmtFormat(e)),
-      el("td", { class: "time" }, seen ? fT(l.vu) : "—"),
-      el("td", {}, el("span", { class: seen ? "stat-vu" : "stat-ap", text: seen ? "Vu" : "À présenter" })),
+      el("td", { class: "time" }, ...heures),
+      el("td", {}, el("div", { class: "lot-acts" }, el("span", { class: seen ? "stat-vu" : "stat-ap", text: seen ? "Vu" : "À présenter" }), btnRevu, annuleRevu)),
+      el("td", {}, btnNote),
       el("td", {}, el("button", { class: "xbtn", title: "Retirer de la sélection", "aria-label": "Retirer le lot " + l.lot, text: "×", onclick: () => { V.confirm = { lot: l.lot, kind: "remove" }; render(); } }))));
-    if (V.confirm && V.confirm.lot === l.lot) {
+    if (V.noteEdit === l.lot) {
+      const ta = el("textarea", { id: "note-" + l.lot, class: "note-edit", placeholder: "Remarque du client sur ce lot (état, intérêt, question…)" }); ta.value = l.note || "";
+      const save = txt => { V.noteEdit = null; const t = txt.trim(); if (t === (l.note || "")) { render(); return; } patch(v.id, { lots: majLot(l.lot, x => ({ ...x, note: t || null, noteMaj: t ? new Date().toISOString() : null })), historique: hist(v, t ? "note" : "note_suppr", l.lot, t ? { texte: t } : null) }); };
+      ta.addEventListener("keydown", ev => { if (ev.key === "Enter" && (ev.ctrlKey || ev.metaKey)) save(ta.value); if (ev.key === "Escape") { V.noteEdit = null; render(); } });
+      tb.append(el("tr", { class: "note-row" }, el("td", { colspan: 8 }, el("div", { class: "note-box" }, el("b", { text: "Annotation du lot " + l.lot }), ta,
+        el("div", { class: "vacts" }, el("button", { class: "btn primary", text: "Enregistrer", onclick: () => save(ta.value) }),
+          l.note ? el("button", { class: "btn danger", text: "Supprimer l'annotation", onclick: () => save("") }) : null,
+          el("span", { class: "sp" }), el("button", { class: "btn", text: "Annuler", onclick: () => { V.noteEdit = null; render(); } }))))));
+    }
+    if (V.confirm && V.confirm.lot === l.lot && V.confirm.kind === "unrevu") {
+      const der = revus[revus.length - 1];
+      tb.append(el("tr", { class: "confirm-row" }, el("td", { colspan: 8 }, el("div", { class: "vacts" }, el("span", { text: `Annuler le dernier passage du lot ${l.lot} (${revus.length + 1}e fois à ${fT(der)}) ? L'action reste inscrite dans l'historique.` }), el("span", { class: "sp" }),
+        el("button", { class: "btn danger armed", text: "Oui, annuler", onclick: () => { V.confirm = null; patch(v.id, { lots: majLot(l.lot, x => ({ ...x, revus: (x.revus || []).slice(0, -1) })), historique: hist(v, "revu_annule", l.lot, { ancien: der }) }); } }),
+        el("button", { class: "btn", text: "Garder", onclick: () => { V.confirm = null; render(); } })))));
+    } else if (V.confirm && V.confirm.lot === l.lot) {
       const c = V.confirm;
       const msg = c.kind === "uncheck" ? `Retirer le statut « Vu » du lot ${l.lot} (présenté à ${fT(l.vu)}) ? L'action reste inscrite dans l'historique.` : `Retirer le lot ${l.lot} de cette visite ?${seen ? " Il a déjà été présenté." : ""}`;
-      tb.append(el("tr", { class: "confirm-row" }, el("td", { colspan: 7 }, el("div", { class: "vacts" }, el("span", { text: msg }), el("span", { class: "sp" }),
+      tb.append(el("tr", { class: "confirm-row" }, el("td", { colspan: 8 }, el("div", { class: "vacts" }, el("span", { text: msg }), el("span", { class: "sp" }),
         el("button", { class: "btn danger armed", text: c.kind === "uncheck" ? "Oui, décocher" : "Oui, retirer", onclick: () => {
           V.confirm = null;
-          if (c.kind === "uncheck") patch(v.id, { lots: lots.map(x => x.lot === l.lot ? { ...x, vu: null } : x), historique: hist(v, "vu_annule", l.lot, { ancien: l.vu }) });
+          if (c.kind === "uncheck") patch(v.id, { lots: lots.map(x => x.lot === l.lot ? { ...x, vu: null, revus: [] } : x), historique: hist(v, "vu_annule", l.lot, { ancien: l.vu }) });
           else patch(v.id, { lots: lots.filter(x => x.lot !== l.lot), historique: hist(v, "retrait", l.lot, l.vu ? { ancien: l.vu } : null) });
         } }),
         el("button", { class: "btn", text: "Annuler", onclick: () => { V.confirm = null; render(); } })))));
     }
   }
-  if (!rows.length) tb.append(el("tr", {}, el("td", { colspan: 7, class: "hint", text: n ? "Aucun lot dans ce filtre." : "Aucun lot sélectionné. Utilisez « + Ajouter des lots »." })));
+  if (!rows.length) tb.append(el("tr", {}, el("td", { colspan: 8, class: "hint", text: n ? (V.filter === "notes" ? "Aucun lot annoté pour l'instant : utilisez « ✎ Annoter » sur une ligne." : "Aucun lot dans ce filtre.") : "Aucun lot sélectionné. Utilisez « + Ajouter des lots »." })));
   out.push(el("div", { class: "vtable-wrap" }, el("table", { class: "vtable" },
-    el("thead", {}, el("tr", {}, ["Statut", "N° de lot", "Localisation", "Format", "Heure de présentation", "", ""].map(h => el("th", { text: h })))), tb)));
+    el("thead", {}, el("tr", {}, ["Statut", "N° de lot", "Localisation", "Format", "Heure(s) de présentation", "", "Annotation", ""].map(h => el("th", { text: h })))), tb)));
+
+  // Récapitulatif des lots annotés de la visite
+  const annotes = lots.filter(l => l.note);
+  out.push(el("div", { class: "vcard" },
+    el("div", { class: "vacts" }, el("div", { class: "eyebrow", text: `Lots annotés (${annotes.length})` }), el("span", { class: "sp" }),
+      annotes.length ? el("button", { class: "btn small", text: "Télécharger (Excel/CSV)", onclick: () => exportNotes([v], `Annotations_${(v.nom || "client").replace(/[^\w\-]+/g, "_")}_${v.date || today()}.csv`) }) : null),
+    annotes.length ? el("div", { class: "recap-notes" }, annotes.map(l => recapLigne(l, info(cat, l.lot)))) : el("p", { class: "hint", text: "Aucune annotation. Le bouton « ✎ Annoter » de chaque lot permet de noter une remarque du client." })));
 
   // Commentaires, observations, signatures
   const ta = (lab, id, key) => { const t = el("textarea", { id }); t.value = v[key] || ""; t.addEventListener("change", () => patch(v.id, { [key]: t.value })); return el("label", { class: "full" }, lab, t); };
@@ -2192,7 +2269,7 @@ function detail(v) {
 
   // Historique
   const h = (v.historique || []).slice().reverse();
-  const lbl = { creation: "Visite créée", ajout: "Lot ajouté", retrait: "Lot retiré", vu: "Lot présenté", vu_annule: "Statut « Vu » annulé", terminee: "Visite terminée", rangee: "Rangée dans une vente", derangee: "Retirée de la vente", reouverture: "Visite rouverte", export: "Compte rendu exporté", signature: "Signature enregistrée" };
+  const lbl = { creation: "Visite créée", ajout: "Lot ajouté", retrait: "Lot retiré", vu: "Lot présenté", vu_annule: "Statut « Vu » annulé", terminee: "Visite terminée", revu: "Lot revu", revu_annule: "Passage annulé", note: "Annotation", note_suppr: "Annotation supprimée", rangee: "Rangée dans une vente", derangee: "Retirée de la vente", reouverture: "Visite rouverte", export: "Compte rendu exporté", signature: "Signature enregistrée" };
   out.push(el("details", { class: "vcard" }, el("summary", { text: `Historique des actions (${h.length})` }),
     el("div", { class: "hist" }, h.map(x => el("div", { text: `${fDT(x.t)} — ${lbl[x.action] || x.action}${x.lot ? " " + x.lot : ""}${x.ancien ? " (était vu à " + fT(x.ancien) + ")" : ""}` })))));
   return out;
