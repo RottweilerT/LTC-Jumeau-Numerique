@@ -23,7 +23,7 @@ button.primary{background:var(--accent);border-color:var(--accent);color:#fff}bu
 (() => {
 const $ = s => document.querySelector(s);
 let db = null, data = null;
-if (typeof FIREBASE_CONFIG !== "undefined" && FIREBASE_CONFIG && window.firebase) { firebase.initializeApp(FIREBASE_CONFIG); db = firebase.firestore(); db.settings({ ignoreUndefinedProperties: true }); }
+if (typeof FIREBASE_CONFIG !== "undefined" && FIREBASE_CONFIG && window.firebase) { firebase.initializeApp(FIREBASE_CONFIG); db = firebase.firestore(); db.settings({ ignoreUndefinedProperties: true, experimentalAutoDetectLongPolling: true }); }
 if (!db) $("#msg").innerHTML = '<p class="err">La base Firebase n\'est pas encore branchée (firebase-config.js).</p>';
 const NOMS = { config: "Réglages du bâtiment", racks: "Emplacements (armoires, roulettes…)", items: "Lots rangés", visites: "Visites clients", personnes: "Personnes" };
 $("#f").addEventListener("change", async () => {

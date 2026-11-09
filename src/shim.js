@@ -16,7 +16,7 @@
     try {
       firebase.initializeApp(FIREBASE_CONFIG);
       db = firebase.firestore();
-      db.settings({ ignoreUndefinedProperties: true, merge: true });
+      db.settings({ ignoreUndefinedProperties: true, merge: true, experimentalAutoDetectLongPolling: true });
       db.enablePersistence({ synchronizeTabs: true }).catch(() => {});
     } catch (e) { console.error(e); db = null; }
   }

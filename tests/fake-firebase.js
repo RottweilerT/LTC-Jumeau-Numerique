@@ -11,7 +11,7 @@
     set: async (d, o) => write(c, id, old => o && o.merge ? deep(old || {}, d) : d),
     update: async d => { if (!snap(c, id).exists) { const e = new Error('not found'); e.code = 'not-found'; throw e; } write(c, id, old => { const n = clone(old); for (const [k, v] of Object.entries(d)) { const ks = k.split('.'); let o = n; ks.slice(0, -1).forEach(x => { o[x] = o[x] || {}; o = o[x]; }); if (v && v.__del) delete o[ks[ks.length - 1]]; else o[ks[ks.length - 1]] = v; } return n; }); },
     delete: async () => write(c, id, () => undefined),
-    onSnapshot(cb) { const l = () => cb(snap(c, id)); L.add(l); setTimeout(l, 0); return () => L.delete(l); } }; }
+    onSnapshot(a, b) { const cb = typeof a === "function" ? a : b; const l = () => cb(snap(c, id)); L.add(l); setTimeout(l, 0); return () => L.delete(l); } }; }
   function col(c) { return {
     doc: id => doc(c, id || nid()),
     add: async d => { const r = doc(c, nid()); await r.set(d); return r; },
