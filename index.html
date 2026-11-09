@@ -2032,6 +2032,24 @@ function menuExport(v) {
       el("span", { class: "sp" }), el("button", { class: "btn", text: "Fermer", onclick: close }))]);
 }
 
+/* ---- Modifier les informations d'une visite (client, date, heure, accompagnant) ---- */
+function modifierInfos(v) {
+  const champ = (lab, k, type, full) => { const i = el("input", { id: "mi-" + k, type: type || "text" }); i.value = v[k] || ""; return [el("label", { class: full ? "full" : "" }, lab, i), i]; };
+  const [lNom, iNom] = champ("Nom du client", "nom"), [lPre, iPre] = champ("Prénom du client", "prenom"),
+    [lDate, iDate] = champ("Date de la visite", "date", "date"), [lH, iH] = champ("Heure de début", "heure", "time"), [lC, iC] = champ("Accompagné par", "collab", "text", true);
+  const dl = el("datalist", { id: "mi-profils" }); iC.setAttribute("list", "mi-profils");
+  T.db.collection("personnes").get().then(s => s.docs.map(d => d.data().nom).filter(Boolean).sort().forEach(n => dl.append(el("option", { value: n })))).catch(() => {});
+  modale("Modifier la visite", close => [el("form", { class: "vform", onsubmit: async e => {
+    e.preventDefault();
+    if (!iNom.value.trim()) { toast("Le nom du client est obligatoire.", true); return; }
+    const data = { nom: iNom.value.trim(), prenom: iPre.value.trim(), date: iDate.value || v.date, heure: iH.value || v.heure, collab: iC.value.trim() };
+    const chg = Object.keys(data).filter(k => (v[k] || "") !== data[k]);
+    if (!chg.length) { close(); return; }
+    await patch(v.id, { ...data, historique: hist(v, "infos", null, { champs: chg.join(", ") }) }); close(); toast("Visite mise à jour");
+  } }, lNom, lPre, lDate, lH, lC, dl,
+    el("div", { class: "vacts full" }, el("button", { class: "btn primary big", type: "submit", text: "Enregistrer" }), el("button", { class: "btn big", type: "button", text: "Annuler", onclick: close })))]);
+}
+
 /* ---- Annotations ---- */
 function recapLigne(l, e, client) {
   const revus = (l.revus || []).length;
@@ -2191,7 +2209,8 @@ function detail(v) {
   out.push(el("div", { class: "vhead" },
     el("h2", { text: `${v.prenom || ""} ${v.nom || ""}`.trim() }),
     el("span", { class: "chip-s " + (done ? "done" : "live"), text: done ? "Terminée" : "En cours" })));
-  out.push(el("div", { class: "vmeta", text: `${venteLabel(v)} · visite du ${fDate(v.date)} à ${v.heure || "—"}${v.collab ? " · accompagné par " + v.collab : ""}` }));
+  out.push(el("div", { class: "vente-ligne" }, el("span", { class: "vmeta", text: `${venteLabel(v)} · visite du ${fDate(v.date)} à ${v.heure || "—"}${v.collab ? " · accompagné par " + v.collab : ""}` }),
+    el("button", { class: "btn small", text: "Modifier les infos", onclick: () => modifierInfos(v) })));
   { const vte = V.ventes.get(v.vente), rk = rang(v);
     out.push(el("div", { class: "vente-ligne" },
       el("span", {}, vte ? el("span", {}, "Vente : ", el("b", { text: vte.nom }), rk ? ` · client n° ${rk}` : "") : el("span", { class: "hint", text: "Pas encore rangée dans une vente (le n° du client et le nom de la vente apparaissent sur le compte rendu une fois rangée)." })),
@@ -2306,9 +2325,9 @@ function detail(v) {
 
   // Historique
   const h = (v.historique || []).slice().reverse();
-  const lbl = { creation: "Visite créée", ajout: "Lot ajouté", retrait: "Lot retiré", vu: "Lot présenté", vu_annule: "Statut « Vu » annulé", terminee: "Visite terminée", revu: "Lot revu", revu_annule: "Passage annulé", note: "Annotation", note_suppr: "Annotation supprimée", rangee: "Rangée dans une vente", derangee: "Retirée de la vente", reouverture: "Visite rouverte", export: "Compte rendu exporté", signature: "Signature enregistrée" };
+  const lbl = { creation: "Visite créée", ajout: "Lot ajouté", retrait: "Lot retiré", vu: "Lot présenté", vu_annule: "Statut « Vu » annulé", terminee: "Visite terminée", infos: "Informations modifiées", revu: "Lot revu", revu_annule: "Passage annulé", note: "Annotation", note_suppr: "Annotation supprimée", rangee: "Rangée dans une vente", derangee: "Retirée de la vente", reouverture: "Visite rouverte", export: "Compte rendu exporté", signature: "Signature enregistrée" };
   out.push(el("details", { class: "vcard" }, el("summary", { text: `Historique des actions (${h.length})` }),
-    el("div", { class: "hist" }, h.map(x => el("div", { text: `${fDT(x.t)} — ${lbl[x.action] || x.action}${x.lot ? " " + x.lot : ""}${x.ancien ? " (était vu à " + fT(x.ancien) + ")" : ""}${x.jour ? " · journée du " + fDate(x.jour) : ""}` })))));
+    el("div", { class: "hist" }, h.map(x => el("div", { text: `${fDT(x.t)} — ${lbl[x.action] || x.action}${x.lot ? " " + x.lot : ""}${x.ancien ? " (était vu à " + fT(x.ancien) + ")" : ""}${x.jour ? " · journée du " + fDate(x.jour) : ""}${x.champs ? " (" + x.champs + ")" : ""}` })))));
   return out;
 }
 
