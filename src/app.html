@@ -586,12 +586,18 @@ function renderPlan() {
     ov.append(el("h2", { text: "Données indisponibles" }), el("p", { text: (window.firebase && typeof FIREBASE_CONFIG !== "undefined" && FIREBASE_CONFIG) ? "La base Firebase ne répond pas. Vérifiez la connexion puis rechargez la page." : "La base Firebase n'est pas encore branchée (firebase-config.js)." }));
     return;
   }
-  if (!allLoaded) { ov.hidden = false; ov.append(el("p", { text: "Chargement du bâtiment…" })); return; }
+  if (!allLoaded) { ov.hidden = false; ov.append(el("h2", { text: "Chargement du plan…" }), el("p", { text: S.lent ? "La base met du temps à répondre. Vérifiez la connexion (Wi-Fi ou 4G), puis rechargez la page." : "Connexion à la base partagée." }));
+    if (S.lent) ov.append(el("button", { class: "btn primary", text: "Recharger la page", onclick: () => location.reload() })); return; }
   const c = S.config;
   if (!c) {
     ov.hidden = false;
     ov.append(el("h2", { text: "Aucun bâtiment configuré" }), el("p", { text: "Créez un bâtiment vide, puis tracez vos murs et ajoutez vos étagères." }));
-    if (S.canWrite) ov.append(el("button", { class: "btn primary", text: "Créer un bâtiment de 30 × 20 étagères", onclick: () => write(() => db.doc("config/batiment").set({ nom: "Bâtiment principal", largeur: 30, profondeur: 20, zones: [] })) }));
+    // Sécurité : jamais de création si des emplacements existent déjà ou si le serveur n'a pas confirmé l'absence de plan
+    if (S.canWrite && S.configServeur && !S.racks.size) ov.append(el("button", { class: "btn primary", text: "Créer un bâtiment de 30 × 20 étagères", onclick: async () => {
+      try { const s = await db.doc("config/batiment").get({ source: "server" }); if (s.exists) { toast("Le plan existe déjà : rechargement."); location.reload(); return; } } catch (_) { toast("Base injoignable : rien n'a été créé.", true); return; }
+      write(() => db.doc("config/batiment").set({ nom: "Bâtiment principal", largeur: 30, profondeur: 20, zones: [] }));
+    } }));
+    else ov.append(el("button", { class: "btn primary", text: "Recharger la page", onclick: () => location.reload() }));
     return;
   }
   const b = bounds(), W = b.x1 - b.x0, D = b.y1 - b.y0;
@@ -1547,7 +1553,8 @@ async function boot() {
   if (!db) { S.offline = true; render(); return; }
   try { user = await claude.use("user"); } catch (_) { user = null; }
   if (user) { try { uid = await user.id(); const c = await user.can("data.write"); if (c === false) S.canWrite = false; } catch (_) {} }
-  db.doc("config/batiment").onSnapshot(s => { S.config = s.exists ? s.data() : null; S.loaded.config = true; changed(); }, dbErr);
+  db.doc("config/batiment").onSnapshot({ includeMetadataChanges: true }, s => { const cache = !!(s.metadata && s.metadata.fromCache); if (s.exists || !cache) { S.config = s.exists ? s.data() : null; S.loaded.config = true; S.configServeur = !cache; } changed(); }, dbErr);
+  setTimeout(() => { if (!S.loaded.config) { S.lent = true; changed(); } }, 8000);
   db.collection("racks").onSnapshot(s => { s.docs.forEach(d => { const t = d.data().type; if ((t === "chien" || t === "lapin") && d.ref) d.ref.delete().catch(() => {}); }); S.racks = new Map(s.docs.map(d => [d.id, { id: d.id, ...d.data() }]).filter(([, r]) => r.type !== "chien" && r.type !== "lapin")); S.loaded.racks = true; changed(); }, dbErr);
   db.collection("items").onSnapshot(s => { S.items = new Map(s.docs.map(d => [d.id, { id: d.id, ...d.data() }])); S.loaded.items = true; changed(); }, dbErr);
 }
