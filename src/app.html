@@ -325,6 +325,8 @@ h3{margin:0 0 8px;font-family:var(--f-display);font-size:17px;font-weight:600;le
 .note-row td{background:color-mix(in srgb,var(--accent) 7%,transparent)}
 .note-box{display:flex;flex-direction:column;gap:8px}
 .note-edit{min-height:70px;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink);font-size:16px}
+.export-jours{display:flex;flex-direction:column;gap:8px;max-height:55vh;overflow:auto}
+.export-j{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;border:1px solid var(--line);border-radius:10px;padding:10px 12px}
 .recap-notes{display:flex;flex-direction:column;gap:8px}
 .recap-l{border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--surface)}
 .recap-l .note-txt{max-width:none}
@@ -1795,6 +1797,43 @@ function appuiLong(node, action) {
   node.addEventListener("click", e => { if (node.dataset.long) { e.stopImmediatePropagation(); e.preventDefault(); delete node.dataset.long; } }, true);
 }
 
+/* ---- Journées de visite : chaque jour où des lots ont été présentés ---- */
+const jourDe = iso => new Date(iso).toLocaleDateString("sv-SE");
+const jourLong = j => { const s = new Date(j + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" }); return s[0].toUpperCase() + s.slice(1); };
+function joursVisite(v) {
+  const s = new Set();
+  for (const l of v.lots || []) for (const t of [l.vu, ...(l.revus || [])]) if (t) s.add(jourDe(t));
+  return [...s].sort();
+}
+// Lots présentés un jour donné : premier passage ce jour-là ; « revu » si le lot avait déjà été vu un jour précédent
+function lotsDuJour(v, j) {
+  const out = [];
+  for (const l of v.lots || []) {
+    const ts = [l.vu, ...(l.revus || [])].filter(Boolean).sort();
+    const duJour = ts.filter(t => jourDe(t) === j);
+    if (duJour.length) out.push({ ...l, tJour: duJour[0], nJour: duJour.length, revuDuJour: jourDe(ts[0]) < j });
+  }
+  return out.sort((a, b) => a.tJour.localeCompare(b.tJour));
+}
+const sigDuJour = (v, j) => { const sg = v.signatures || {}; return sg["client_" + j] || (sg.client && jourDe(sg.client.t) === j ? sg.client : null); };
+function menuExport(v) {
+  const jours = joursVisite(v);
+  if (!jours.length) { toast("Aucun lot n'a été coché : le compte rendu serait vide.", true); return; }
+  modale("Exporter le compte rendu", close => [
+    el("span", { class: "vmeta", text: jours.length > 1 ? "Un compte rendu par journée : chacun ne reprend que les lots présentés ce jour-là (y compris ceux revus d'un jour précédent)." : "Les lots présentés pendant la visite." }),
+    el("div", { class: "export-jours" }, jours.map((j, i) => {
+      const ls = lotsDuJour(v, j), r = ls.filter(x => x.revuDuJour).length, sig = sigDuJour(v, j);
+      return el("div", { class: "export-j" },
+        el("div", {}, el("b", { text: (jours.length > 1 ? `Jour ${i + 1} · ` : "") + jourLong(j) }),
+          el("div", { class: "vmeta", text: `${ls.length} lot${ls.length > 1 ? "s" : ""}${r ? ` dont ${r} revu${r > 1 ? "s" : ""} d'un jour précédent` : ""} · ${sig ? "signé" : "pas encore signé"}` })),
+        el("div", { class: "vacts" },
+          el("button", { class: "btn small", text: sig ? "Refaire la signature" : "Signer", onclick: () => { close(); sigPad(V.list.get(v.id) || v, "client_" + j, "Signature du client · " + jourLong(j)); } }),
+          el("button", { class: "btn primary small", text: "Exporter (PDF)", onclick: () => { close(); exportPdf(V.list.get(v.id) || v, j, i + 1, jours.length); } })));
+    })),
+    el("div", { class: "vacts" }, jours.length > 1 ? el("button", { class: "btn", text: "Toute la visite en un seul compte rendu", onclick: () => { close(); exportPdf(V.list.get(v.id) || v); } }) : null,
+      el("span", { class: "sp" }), el("button", { class: "btn", text: "Fermer", onclick: close }))]);
+}
+
 /* ---- Annotations ---- */
 function recapLigne(l, e, client) {
   const revus = (l.revus || []).length;
@@ -2046,12 +2085,13 @@ function detail(v) {
     ta("Commentaires de la visite", "vd-com", "commentaires"),
     ta("Observations du client (reprises dans le compte rendu)", "vd-obs", "observations"))));
   const sg = v.signatures || {};
+  const jrs = joursVisite(v);
   const sigBox = (k, lab) => el("div", { class: "sigbox" }, el("strong", { text: lab }),
     sg[k] ? el("img", { src: sg[k].img, alt: lab }) : el("span", { class: "hint", text: "Pas encore signée" }),
     sg[k] ? el("span", { class: "vmeta", text: "Signée le " + fDT(sg[k].t) }) : null,
     el("button", { class: "btn small", text: sg[k] ? "Refaire la signature" : "Signer sur l'écran", onclick: () => sigPad(v, k, lab) }));
   out.push(el("div", { class: "vcard" }, el("div", { class: "eyebrow", text: "Signatures (facultatives, sinon à la main sur le document imprimé)" }),
-    el("div", { class: "sigrow" }, sigBox("client", "Signature du client"))));
+    jrs.length ? el("div", { class: "sigrow" }, jrs.map((j, i) => { const k = sg["client_" + j] ? "client_" + j : (sg.client && jourDe(sg.client.t) === j ? "client" : "client_" + j); return sigBox(k, `Signature du client · ${jrs.length > 1 ? "jour " + (i + 1) + " · " : ""}${fDate(j)}`); })) : el("p", { class: "hint", text: "La signature se fait pour chaque journée où des lots ont été présentés." })));
 
   // Actions finales
   out.push(el("div", { class: "vacts" },
@@ -2061,19 +2101,16 @@ function detail(v) {
       try { await vdoc(v.id).delete(); V.list.delete(v.id); fermer(v.id); toast("Visite supprimée"); }
       catch (e) { toast(e?.code === "invalid_argument" ? "Vous n'avez pas le droit de supprimer cette visite." : "Suppression impossible. Vérifiez la connexion.", true); }
     } }),
-    done ? el("button", { class: "btn big", text: "Rouvrir la visite", onclick: () => patch(v.id, { statut: "en_cours", historique: hist(v, "reouverture") }) }) : null,
     el("span", { class: "sp" }),
-    el("button", { class: "btn primary big", text: done ? "Réexporter le compte rendu (PDF)" : "Terminer et exporter la visite", onclick: async () => {
-      if (!vu) { toast("Aucun lot n'a été coché : le compte rendu serait vide.", true); return; }
-      if (!done) await patch(v.id, { statut: "terminee", fin: new Date().toISOString(), historique: hist(v, "terminee") });
-      exportPdf(V.list.get(v.id) || v);
-    } })));
+    done ? el("button", { class: "btn big", text: "Rouvrir la visite", onclick: () => patch(v.id, { statut: "en_cours", historique: hist(v, "reouverture") }) })
+      : el("button", { class: "btn big", text: "Terminer la visite", onclick: () => patch(v.id, { statut: "terminee", fin: new Date().toISOString(), historique: hist(v, "terminee") }) }),
+    el("button", { class: "btn primary big", text: "Exporter le compte rendu (PDF)…", onclick: () => menuExport(V.list.get(v.id) || v) })));
 
   // Historique
   const h = (v.historique || []).slice().reverse();
   const lbl = { creation: "Visite créée", ajout: "Lot ajouté", retrait: "Lot retiré", vu: "Lot présenté", vu_annule: "Statut « Vu » annulé", terminee: "Visite terminée", revu: "Lot revu", revu_annule: "Passage annulé", note: "Annotation", note_suppr: "Annotation supprimée", rangee: "Rangée dans une vente", derangee: "Retirée de la vente", reouverture: "Visite rouverte", export: "Compte rendu exporté", signature: "Signature enregistrée" };
   out.push(el("details", { class: "vcard" }, el("summary", { text: `Historique des actions (${h.length})` }),
-    el("div", { class: "hist" }, h.map(x => el("div", { text: `${fDT(x.t)} — ${lbl[x.action] || x.action}${x.lot ? " " + x.lot : ""}${x.ancien ? " (était vu à " + fT(x.ancien) + ")" : ""}` })))));
+    el("div", { class: "hist" }, h.map(x => el("div", { text: `${fDT(x.t)} — ${lbl[x.action] || x.action}${x.lot ? " " + x.lot : ""}${x.ancien ? " (était vu à " + fT(x.ancien) + ")" : ""}${x.jour ? " · journée du " + fDate(x.jour) : ""}` })))));
   return out;
 }
 
@@ -2221,10 +2258,10 @@ function sigPad(v, key, lab) {
 }
 
 /* ---- Compte rendu PDF ---- */
-async function exportPdf(v) {
+async function exportPdf(v, jour, numJour, nbJours) {
   if (!window.jspdf || !window.jspdf.jsPDF) { toast("Le module PDF n'a pas pu se charger. Rechargez la page.", true); return; }
   const cat = catalog();
-  const seen = (v.lots || []).filter(l => l.vu).sort((a, b) => String(a.vu).localeCompare(String(b.vu)));
+  const seen = jour ? lotsDuJour(v, jour).map(l => ({ ...l, vu: l.tJour })) : (v.lots || []).filter(l => l.vu).sort((a, b) => String(a.vu).localeCompare(String(b.vu)));
   const client = `${v.prenom || ""} ${v.nom || ""}`.trim();
   const doc = new window.jspdf.jsPDF({ unit: "mm", format: "a4" });
   const W = 210, M = 12;
@@ -2233,7 +2270,10 @@ async function exportPdf(v) {
   const [ent, pied] = await Promise.all([img("entete.png"), img("pied.png")]);
   const MOIS = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"];
   const souligne = (t, x, y) => { doc.text(t, x, y); doc.setLineWidth(.3); doc.line(x, y + .9, x + doc.getTextWidth(t), y + .9); };
-  const sg = v.signatures || {}, sd = sg.client?.t;
+  const sg = { ...(v.signatures || {}) };
+  if (jour) sg.client = sigDuJour(v, jour) || undefined;
+  else { const ks = Object.keys(sg).filter(k => k.startsWith("client")).sort((a, b) => String(sg[b].t).localeCompare(String(sg[a].t))); if (ks.length) sg.client = sg[ks[0]]; }
+  const sd = sg.client?.t;
 
   // ---- Page 1 : le formulaire ----
   if (ent) doc.addImage(ent, "PNG", 33.9, 9.6, 144.2, 19.3);
@@ -2264,7 +2304,7 @@ async function exportPdf(v) {
   doc.setFont("helvetica", "bold"); doc.setFontSize(12); { const rk = rang(v) || v.numero; if (rk) doc.text(String(rk), 141.5, 56.2); } doc.setFontSize(11);
   doc.setFont("helvetica", "bold"); doc.text("J'engage ma responsabilité en cas de dégradation d'un lot", 41.5, 66.5);
   doc.setFont("helvetica", "normal");
-  doc.text("Date :", 15.7, 80); doc.text(v.date ? fDate(v.date) : new Date(sd || Date.now()).toLocaleDateString("fr-FR"), 29, 80);
+  doc.text("Date :", 15.7, 80); doc.text(jour ? fDate(jour) : v.date ? fDate(v.date) : new Date(sd || Date.now()).toLocaleDateString("fr-FR"), 29, 80);
   doc.text("Signature :", 72.5, 80);
   doc.setLineWidth(.35); doc.rect(96, 75.7, 69, 16.6);
   if (sg.client?.img) { try { doc.addImage(sg.client.img, "JPEG", 97, 76.4, 67, 15.2); } catch (_) {} }
@@ -2273,13 +2313,13 @@ async function exportPdf(v) {
   // ---- Liste des lots présentés : sous le formulaire, puis au verso ----
   const OBS = v.observations ? 30 : 0;
   doc.setFont("helvetica", "bold"); doc.setFontSize(10.5);
-  doc.text(`Lots présentés : ${seen.length}`, M + 3, 104);
+  doc.text(jour ? `Lots présentés le ${fDate(jour)} : ${seen.length}${nbJours > 1 ? `   (jour ${numJour} sur ${nbJours})` : ""}` : `Lots présentés : ${seen.length}`, M + 3, 104);
   const TOP1 = 107, BOT1 = 270, TOP = 14, BOT = 286;
-  const sameDay = l => new Date(l.vu).toLocaleDateString("sv-SE") === v.date;
+  const sameDay = l => new Date(l.vu).toLocaleDateString("sv-SE") === (jour || v.date);
   const tousJour = seen.every(sameDay);
   const hm = iso => new Date(iso).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
   const jm = iso => new Date(iso).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" });
-  const rows = seen.map(l => { const e = info(cat, l.lot); return [l.lot, e.idlot ? String(e.idlot) : "—", e.qte ? String(e.qte) : "—", e.unite || "—", sameDay(l) ? hm(l.vu) : jm(l.vu) + " " + hm(l.vu)]; });
+  const rows = seen.map(l => { const e = info(cat, l.lot); return [l.lot, e.idlot ? String(e.idlot) : "—", e.qte ? String(e.qte) : "—", e.unite || "—", (sameDay(l) ? hm(l.vu) : jm(l.vu) + " " + hm(l.vu)) + (l.revuDuJour ? " revu" : "")]; });
   const configs = [];
   for (const [fs, rh] of [[9, 5], [8, 4.4], [7, 3.8], [6.2, 3.3], [5.5, 2.9], [5, 2.6]]) for (const g of [1, 2, 3]) if (!(g === 3 && fs > 8) && !(g === 2 && fs > 9)) configs.push({ fs, rh, g });
   const cap = c => { const hh = c.rh + .6; return c.g * (Math.floor((BOT1 - TOP1 - hh) / c.rh) + Math.floor((BOT - OBS - TOP - hh) / c.rh)); };
@@ -2325,10 +2365,10 @@ async function exportPdf(v) {
   const pages = doc.getNumberOfPages();
   for (let k = 1; k <= pages; k++) { doc.setPage(k); doc.setFont("helvetica", "normal"); doc.setFontSize(7); doc.setTextColor(140); doc.text(`${[v.prenom, v.nom].filter(Boolean).join(" ")} · généré le ${new Date().toLocaleString("fr-FR")} · page ${k}/${pages}`, W - M, 295.5, { align: "right" }); doc.setTextColor(0); }
   const blob = doc.output("blob");
-  const fn = `Compte-rendu_${(v.nom || "client").replace(/[^\w\-]+/g, "_")}_${v.date || today()}.pdf`;
+  const fn = `Compte-rendu_${(v.nom || "client").replace(/[^\w\-]+/g, "_")}_${jour || v.date || today()}${jour && nbJours > 1 ? "_jour" + numJour : ""}.pdf`;
   let dl = null; try { dl = await claude.use("downloads"); } catch (_) {}
   if (!dl) { toast("L'enregistrement de fichiers n'est pas disponible dans cette vue.", true); return; }
-  try { await dl.save({ filename: fn, data: blob }); patch(v.id, { historique: hist(V.list.get(v.id) || v, "export") }); toast("Compte rendu enregistré"); }
+  try { await dl.save({ filename: fn, data: blob }); patch(v.id, { historique: hist(V.list.get(v.id) || v, "export", null, jour ? { jour } : null) }); toast("Compte rendu enregistré"); }
   catch (e) { if (e?.code !== "declined") toast("Le PDF n'a pas pu être enregistré (" + (e?.code || "erreur") + ").", true); }
 }
 
