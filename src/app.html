@@ -314,6 +314,7 @@ h3{margin:0 0 8px;font-family:var(--f-display);font-size:17px;font-weight:600;le
 .vente-choix .btn.on{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 10%,var(--surface))}
 .vitem{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
 .vitem .rang{display:inline-block;margin-right:8px;padding:1px 8px;border-radius:6px;background:var(--brand);color:var(--brand-ink);font-family:var(--f-mono);font-size:13px;vertical-align:3px}
+.notes-txt{flex:1;min-height:60vh;width:100%;padding:14px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);font:16px/1.55 var(--f-body);resize:vertical}
 .vtabs{position:sticky;top:0;z-index:8;display:flex;gap:6px;overflow-x:auto;padding:6px;margin:0 -2px;background:var(--bg);border-bottom:1px solid var(--line);scrollbar-width:thin}
 .vtab{flex:none;display:flex;align-items:stretch;border:1.5px solid var(--line);border-radius:10px;background:var(--surface);max-width:220px}
 .vtab.on{border-color:var(--brand);background:var(--brand);color:var(--brand-ink)}
@@ -365,6 +366,7 @@ h3{margin:0 0 8px;font-family:var(--f-display);font-size:17px;font-weight:600;le
     <div class="seg tabs" role="tablist" aria-label="Onglets">
       <button id="tabPlan" role="tab" aria-pressed="true">Plan</button>
       <button id="tabVis" role="tab" aria-pressed="false">Visites clients</button>
+      <button id="tabNotes" role="tab" aria-pressed="false">Notes</button>
     </div>
     <div class="seg plan-only" role="group" aria-label="Type de vue" hidden>
       <button id="v2" aria-pressed="true">2D</button>
@@ -404,6 +406,10 @@ h3{margin:0 0 8px;font-family:var(--f-display);font-size:17px;font-weight:600;le
     <aside class="panel" id="panel" aria-live="polite"></aside>
   </div>
   <section class="visits" id="visits" hidden></section>
+  <section class="visits notes" id="notes" hidden>
+    <div class="vhead"><h2>Notes</h2><span class="vmeta" id="notesEtat"></span></div>
+    <textarea id="notesTxt" class="notes-txt" placeholder="Texte libre, partagé avec toute l'équipe et enregistré automatiquement." spellcheck="true"></textarea>
+  </section>
 </div>
 <div class="toast" id="toast" hidden></div>
 
@@ -1614,16 +1620,39 @@ T.listeners.push(() => { start(); if (V.mode === "visites" && !V.confirm && !doc
 /* ---- Onglets ---- */
 function setMode(m) {
   V.mode = m;
-  document.getElementById("app").classList.toggle("mode-visites", m === "visites");
+  document.getElementById("app").classList.toggle("mode-visites", m !== "plan");
   $("#tabPlan").setAttribute("aria-pressed", m === "plan");
   $("#tabVis").setAttribute("aria-pressed", m === "visites");
+  $("#tabNotes").setAttribute("aria-pressed", m === "notes");
   $("#visits").hidden = m !== "visites";
+  $("#notes").hidden = m !== "notes";
+  if (m === "notes") notesStart();
   try { localStorage.setItem("onglet", m); } catch (_) {}
   if (m === "visites") { start(); render(); }
   else window.dispatchEvent(new Event("resize"));
 }
 $("#tabPlan").onclick = () => setMode("plan");
 $("#tabVis").onclick = () => setMode("visites");
+$("#tabNotes").onclick = () => setMode("notes");
+
+/* ---- Onglet Notes (provisoire) : un texte libre partagé, dans config/notes ---- */
+let notesSub = false, notesSale = false, notesT = null;
+function notesStart() {
+  if (notesSub || !T.db) { if (!T.db) $("#notesEtat").textContent = "Base indisponible"; return; }
+  notesSub = true;
+  const ta = $("#notesTxt"), etat = $("#notesEtat"), ref = T.db.doc("config/notes");
+  ref.onSnapshot(s => {
+    const d = s.exists ? s.data() : {};
+    if (!notesSale && document.activeElement !== ta) ta.value = d.texte || "";
+    if (!notesSale) etat.textContent = d.maj ? `Enregistré · ${d.parNom ? d.parNom + " · " : ""}${new Date(d.maj).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}` : "";
+  }, () => { etat.textContent = "Synchronisation interrompue"; });
+  const sauver = async () => {
+    try { await ref.set({ texte: ta.value, maj: new Date().toISOString(), par: T.uid || "", parNom: window.__profil?.().nom || "" }, { merge: true }); notesSale = false; }
+    catch (_) { etat.textContent = "Enregistrement impossible, vérifiez la connexion"; }
+  };
+  ta.addEventListener("input", () => { notesSale = true; etat.textContent = "Modification…"; clearTimeout(notesT); notesT = setTimeout(sauver, 800); });
+  ta.addEventListener("blur", () => { if (notesSale) { clearTimeout(notesT); sauver(); } });
+}
 
 /* ---- Plusieurs visites ouvertes en même temps (onglets, 10 au maximum) ---- */
 const MAX_OUVERTES = 10;
@@ -2227,7 +2256,7 @@ async function exportPdf(v) {
 }
 
 let m0 = "plan"; try { m0 = localStorage.getItem("onglet") || "plan"; } catch (_) {}
-if (m0 === "visites") setMode("visites");
-const wait = setInterval(() => { if (T.db) { start(); clearInterval(wait); } }, 300);
+if (m0 === "visites" || m0 === "notes") setMode(m0);
+const wait = setInterval(() => { if (T.db) { start(); if (V.mode === "notes") notesStart(); clearInterval(wait); } }, 300);
 })();
 </script>
