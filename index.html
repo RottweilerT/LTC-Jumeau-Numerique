@@ -2019,10 +2019,14 @@ const setSection = k => { V.section = k; setVenteSel(""); try { localStorage.set
 const ventesTriees = () => [...V.ventes.values()].sort((a, b) => (!a.date) - (!b.date) || String(a.date || "").localeCompare(String(b.date || "")) || String(a.creee || "").localeCompare(String(b.creee || "")));
 const nomClient = v => `${v.prenom || ""} ${v.nom || ""}`.trim() || "Client sans nom";
 const ordreVisite = (a, b) => String(a.date || "").localeCompare(String(b.date || "")) || String(a.heure || "").localeCompare(String(b.heure || "")) || String(a.creee || "").localeCompare(String(b.creee || ""));
-// Classement d'une vente : « en_cours » (affichée directement dans la barre), « a_venir » ou « passee » (regroupées derrière une puce).
-// Choix manuel enregistré dans « etat » ; sans choix : passée si sa date est dépassée, sinon en cours (ancien « rangee » → à venir).
+// Classement automatique d'une vente d'après sa date (règle d'Armand, 10/11/2026) :
+//  - passée  : la date de la vente est dépassée ;
+//  - à venir : la vente a lieu dans plus de 2 mois ;
+//  - en cours : le reste du temps (et les ventes sans date).
 const ETATS = [["en_cours", "En cours"], ["a_venir", "À venir"], ["passee", "Passée"]];
-const etatVente = x => !x ? "en_cours" : ETATS.some(([k]) => k === x.etat) ? x.etat : x.date && x.date < today() ? "passee" : x.rangee ? "a_venir" : "en_cours";
+const dansDeuxMois = () => { const d = new Date(); d.setMonth(d.getMonth() + 2); return d.toLocaleDateString("sv-SE"); };
+const etatVente = x => !x || !x.date ? "en_cours" : x.date < today() ? "passee" : x.date > dansDeuxMois() ? "a_venir" : "en_cours";
+const regleEtat = x => !x.date ? "Sans date : classée « en cours ». Ajoutez une date avec « Renommer »." : etatVente(x) === "passee" ? "Classée automatiquement : la date de la vente est passée." : etatVente(x) === "a_venir" ? `Classée automatiquement : la vente a lieu dans plus de 2 mois (elle passera « en cours » le ${fDate(new Date(new Date(x.date + "T12:00:00").setMonth(new Date(x.date + "T12:00:00").getMonth() - 2)).toLocaleDateString("sv-SE"))}).` : "Classée automatiquement : la vente a lieu dans moins de 2 mois.";
 const estPassee = x => etatVente(x) === "passee";
 const ventesEnCours = () => ventesTriees().filter(x => etatVente(x) === "en_cours");
 const ventesAVenir = () => ventesTriees().filter(x => etatVente(x) === "a_venir");
@@ -2034,12 +2038,11 @@ async function classerVente(x, etat) {
   toast(`« ${x.nom} » rangée dans ${etat === "en_cours" ? "les ventes en cours" : etat === "a_venir" ? "les ventes à venir" : "les ventes passées"}`);
 }
 // Sélecteur En cours / À venir / Passée
-const choixEtat = (x, apres) => el("div", { class: "seg etat-vente", role: "group", "aria-label": "Ranger la vente dans" },
-  ETATS.map(([k, lab]) => el("button", { type: "button", "aria-pressed": String(etatVente(x) === k), text: lab, onclick: async () => { try { await classerVente(x, k); } catch (_) { toast("Enregistrement impossible. Vérifiez la connexion.", true); } if (apres) apres(); } })));
+// Le classement est automatique : on affiche seulement la règle appliquée
+const choixEtat = x => el("span", { class: "vmeta regle-etat", text: regleEtat(x) });
 function menuVente(x) {
   modale(x.nom, close => [
-    el("span", { class: "vmeta", text: "Ranger cette vente dans :" }),
-    choixEtat(x, close),
+    choixEtat(x),
     el("div", { class: "vente-choix" },
       el("button", { class: "btn big", text: "Renommer / changer la date", onclick: () => { close(); modale("Modifier la vente", c2 => [formVente(c2, async (n, d) => majVente(x.id, { nom: n, date: d }), x)]); } })),
     el("div", { class: "vacts" }, el("span", { class: "sp" }), el("button", { class: "btn", text: "Fermer", onclick: close }))]);
@@ -2091,7 +2094,7 @@ function formVente(close, ok, init = {}) {
     el("div", { class: "vacts full" }, el("button", { class: "btn primary big", type: "submit", text: init.nom ? "Enregistrer" : "Créer la vente" }), el("button", { class: "btn big", type: "button", text: "Annuler", onclick: close })));
 }
 function nouvelleVente(apres, etat) {
-  const t = etat === "a_venir" ? "Nouvelle vente à venir" : etat === "passee" ? "Nouvelle vente passée" : etat === "en_cours" ? "Nouvelle vente en cours" : "Nouvelle vente";
+  const t = "Nouvelle vente"; // rangée ensuite automatiquement selon sa date
   modale(t, close => [formVente(close, async (n, d) => { const id = await creerVente(n, d, etat); toast(`Vente « ${n} » créée`); if (apres) await apres(id); else { setVenteSel(id); render(); } })]);
 }
 function menuRanger(v) {
@@ -2272,7 +2275,7 @@ function listView() {
           V.delVente = null;
           try { await supprimerVente(vt.id); setVenteSel(""); toast("Vente supprimée : ses visites sont dans « Visites sans vente »."); render(); } catch (_) { toast("Suppression impossible. Vérifiez la connexion.", true); }
         } })),
-      el("div", { class: "etat-ligne" }, el("span", { class: "vmeta", text: "Ranger dans :" }), choixEtat(vt))));
+      el("div", { class: "etat-ligne" }, choixEtat(vt))));
     out.push(el("div", { class: "vhead" }, el("h3", { class: "sect-titre", text: "Visites" }),
       el("button", { class: "btn primary big", text: "+ Nouvelle visite", onclick: () => { V.form = { nom: "", prenom: "", date: today(), heure: nowHM(), collab: (window.__profil?.().nom || ""), com: "", vente: vt.id, type: "collection", prefixe: "40", lots: { text: "" } }; render(); setTimeout(() => $("#vf-nom")?.focus(), 0); } })));
     if (V.form) out.push(newForm());
