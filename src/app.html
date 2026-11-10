@@ -1623,7 +1623,7 @@ function start() {
   T.db.doc("config/ventes").onSnapshot(s => {
     const l = (s.exists && s.data().liste) || {};
     V.ventes = new Map(Object.entries(l).filter(([, x]) => x && x.nom).map(([id, x]) => [id, { id, ...x }]));
-    if (!["a_ranger", "toutes", "passees"].includes(V.venteSel) && !V.ventes.has(V.venteSel)) V.venteSel = "a_ranger";
+    if (!["a_ranger", "toutes", "passees", "plus"].includes(V.venteSel) && !V.ventes.has(V.venteSel)) V.venteSel = "a_ranger";
     render();
   }, () => {});
   T.db.collection("visites").onSnapshot(s => {
@@ -1745,9 +1745,19 @@ const setVenteSel = id => { V.venteSel = id; try { localStorage.setItem("vente-a
 const ventesTriees = () => [...V.ventes.values()].sort((a, b) => (!a.date) - (!b.date) || String(a.date || "").localeCompare(String(b.date || "")) || String(a.creee || "").localeCompare(String(b.creee || "")));
 const nomClient = v => `${v.prenom || ""} ${v.nom || ""}`.trim() || "Client sans nom";
 const ordreVisite = (a, b) => String(a.date || "").localeCompare(String(b.date || "")) || String(a.heure || "").localeCompare(String(b.heure || "")) || String(a.creee || "").localeCompare(String(b.creee || ""));
-// Ventes passées : date de la vente antérieure à aujourd'hui (rangées dans l'onglet « Ventes passées », la plus récente d'abord)
+// Ventes terminées : date de la vente antérieure à aujourd'hui (rangées automatiquement dans « Ventes terminées », la plus récente d'abord)
 const estPassee = x => !!(x && x.date && x.date < today());
-const ventesAVenir = () => ventesTriees().filter(x => !estPassee(x));
+// Ventes à venir affichées dans la barre ; celles rangées à la main vont dans « ⋯ »
+const ventesAVenir = () => ventesTriees().filter(x => !estPassee(x) && !x.rangee);
+const ventesRangees = () => ventesTriees().filter(x => !estPassee(x) && x.rangee);
+function menuVente(x) {
+  modale(x.nom, close => [
+    el("span", { class: "vmeta", text: estPassee(x) ? "Vente terminée : elle est rangée automatiquement dans « Ventes terminées »." : x.rangee ? "Cette vente est rangée dans « ⋯ »." : "Cette vente est affichée dans la barre." }),
+    el("div", { class: "vente-choix" },
+      !estPassee(x) ? el("button", { class: "btn big", text: x.rangee ? "Remettre dans la barre" : "Ranger dans « ⋯ »", onclick: async () => { close(); await majVente(x.id, { rangee: !x.rangee }); toast(x.rangee ? "Vente remise dans la barre" : "Vente rangée dans « ⋯ »"); if (!x.rangee && V.venteSel === x.id) setVenteSel("a_ranger"); render(); } }) : null,
+      el("button", { class: "btn big", text: "Renommer / changer la date", onclick: () => { close(); modale("Modifier la vente", c2 => [formVente(c2, async (n, d) => majVente(x.id, { nom: n, date: d }), x)]); } })),
+    el("div", { class: "vacts" }, el("span", { class: "sp" }), el("button", { class: "btn", text: "Fermer", onclick: close }))]);
+}
 const ventesPassees = () => ventesTriees().filter(estPassee).reverse();
 // Numéro du client = ordre dans la vente selon l'heure du premier lot coché de chaque visite
 // (un client dont aucun lot n'est encore coché passe après, dans l'ordre des visites)
@@ -1799,12 +1809,12 @@ function nouvelleVente(apres) {
 }
 function menuRanger(v) {
   modale(`Ranger la visite de ${nomClient(v)}`, close => {
-    const vts = ventesTriees(), av = ventesAVenir(), pa = ventesPassees();
+    const vts = ventesTriees(), av = [...ventesAVenir(), ...ventesRangees()], pa = ventesPassees();
     const bt = x => el("button", { class: "btn big" + (v.vente === x.id ? " on" : ""), type: "button", onclick: async () => { close(); await ranger(v, x.id); } },
       el("span", { text: x.nom }), x.date ? el("small", { text: " · " + fDate(x.date) }) : null, v.vente === x.id ? el("small", { text: " (actuelle)" }) : null);
     return [
       el("span", { class: "vmeta", text: vts.length ? "Choisissez la vente :" : "Aucune vente pour l'instant : créez-en une." }),
-      el("div", { class: "vente-choix" }, av.map(bt), pa.length ? el("div", { class: "eyebrow", style: "margin-top:6px", text: "Ventes passées" }) : null, pa.map(bt)),
+      el("div", { class: "vente-choix" }, av.map(bt), pa.length ? el("div", { class: "eyebrow", style: "margin-top:6px", text: "Ventes terminées" }) : null, pa.map(bt)),
       el("div", { class: "vacts" },
         el("button", { class: "btn big", type: "button", text: "+ Nouvelle vente", onclick: () => { close(); nouvelleVente(async id => ranger(v, id)); } }),
         v.vente ? el("button", { class: "btn big", type: "button", text: "Retirer de la vente", onclick: async () => { close(); await ranger(v, null); } }) : null,
@@ -1932,23 +1942,31 @@ function listView() {
   if (!V.loaded) { out.push(el("p", { class: "hint", text: "Chargement des visites…" })); return out; }
   const tout = [...V.list.values()];
   const passees = ventesPassees(), idsPasses = new Set(passees.map(x => x.id));
-  const nb = id => id === "toutes" ? tout.length : id === "a_ranger" ? tout.filter(v => !v.vente || !V.ventes.has(v.vente)).length : id === "passees" ? tout.filter(v => idsPasses.has(v.vente)).length : tout.filter(v => v.vente === id).length;
+  const rangees = ventesRangees(), idsRanges = new Set(rangees.map(x => x.id));
+  const nb = id => id === "toutes" ? tout.length : id === "a_ranger" ? tout.filter(v => !v.vente || !V.ventes.has(v.vente)).length : id === "passees" ? tout.filter(v => idsPasses.has(v.vente)).length : id === "plus" ? tout.filter(v => idsRanges.has(v.vente)).length : tout.filter(v => v.vente === id).length;
   const dansPassees = V.venteSel === "passees" || idsPasses.has(V.venteSel);
-  const chip = (id, lab, on) => el("button", { class: "vchip" + ((on ?? V.venteSel === id) ? " on" : ""), "aria-pressed": String(on ?? V.venteSel === id), onclick: () => { setVenteSel(id); render(); } },
+  const dansPlus = V.venteSel === "plus" || idsRanges.has(V.venteSel);
+  const chip = (id, lab, on, title) => el("button", { class: "vchip" + ((on ?? V.venteSel === id) ? " on" : ""), "aria-pressed": String(on ?? V.venteSel === id), title: title || null, onclick: () => { setVenteSel(id); render(); } },
     el("span", { text: lab }), el("span", { class: "n", text: String(nb(id)) }));
+  // Puce d'une vente : appui long ou clic droit → ranger dans « ⋯ » / remettre dans la barre
+  const chipVente = (x, lab) => { const c = chip(x.id, lab || x.nom, undefined, "Appui long ou clic droit : ranger cette vente"); appuiLong(c, () => menuVente(V.ventes.get(x.id) || x)); return c; };
   out.push(el("div", { class: "vventes", role: "group", "aria-label": "Ventes" },
-    chip("a_ranger", "À ranger"), ventesAVenir().map(x => chip(x.id, x.nom)),
-    passees.length ? chip("passees", "Ventes passées", dansPassees) : null, chip("toutes", "Toutes"),
+    chip("a_ranger", "À ranger"), ventesAVenir().map(x => chipVente(x)),
+    rangees.length ? chip("plus", "⋯", dansPlus, "Ventes rangées") : null,
+    passees.length ? chip("passees", "Ventes terminées", dansPassees) : null, chip("toutes", "Toutes"),
     el("button", { class: "vchip add", text: "+ Nouvelle vente", onclick: () => nouvelleVente() })));
-  if (dansPassees) out.push(el("div", { class: "vventes sous", role: "group", "aria-label": "Ventes passées" },
-    passees.map(x => chip(x.id, x.nom + (x.date ? " · " + fDate(x.date) : "")))));
+  if (dansPlus) out.push(el("div", { class: "vventes sous", role: "group", "aria-label": "Ventes rangées" },
+    rangees.map(x => chipVente(x, x.nom + (x.date ? " · " + fDate(x.date) : "")))));
+  if (dansPassees) out.push(el("div", { class: "vventes sous", role: "group", "aria-label": "Ventes terminées" },
+    passees.map(x => chipVente(x, x.nom + (x.date ? " · " + fDate(x.date) : "")))));
   const vt = V.ventes.get(V.venteSel);
   if (vt) {
     const armedV = V.delVente === vt.id;
     out.push(el("div", { class: "vcard vente-tete" },
-      el("div", {}, el("div", { class: "eyebrow", text: estPassee(vt) ? "Vente passée" : "Vente" }), el("b", { class: "vente-nom", text: vt.nom }), el("div", { class: "vmeta", text: (vt.date ? "le " + fDate(vt.date) + " · " : "") + `${nb(vt.id)} visite${nb(vt.id) > 1 ? "s" : ""}` })),
+      el("div", {}, el("div", { class: "eyebrow", text: estPassee(vt) ? "Vente terminée" : vt.rangee ? "Vente rangée dans « ⋯ »" : "Vente" }), el("b", { class: "vente-nom", text: vt.nom }), el("div", { class: "vmeta", text: (vt.date ? "le " + fDate(vt.date) + " · " : "") + `${nb(vt.id)} visite${nb(vt.id) > 1 ? "s" : ""}` })),
       el("div", { class: "vacts" },
         el("button", { class: "btn small", text: "Lots annotés", onclick: () => recapVente(vt.nom, tout.filter(v => v.vente === vt.id)) }),
+        !estPassee(vt) ? el("button", { class: "btn small", text: vt.rangee ? "Remettre dans la barre" : "Ranger dans « ⋯ »", onclick: async () => { await majVente(vt.id, { rangee: !vt.rangee }); toast(vt.rangee ? "Vente remise dans la barre" : "Vente rangée dans « ⋯ »"); } }) : null,
         el("button", { class: "btn small", text: "Renommer", onclick: () => modale("Modifier la vente", close => [formVente(close, async (n, d) => majVente(vt.id, { nom: n, date: d }), vt)]) }),
         el("button", { class: "btn small danger" + (armedV ? " armed" : ""), text: armedV ? "Confirmer : supprimer la vente" : "Supprimer la vente", title: "Les visites ne sont pas supprimées : elles retournent dans « À ranger ».", onclick: async () => {
           if (!armedV) { V.delVente = vt.id; render(); setTimeout(() => { if (V.delVente === vt.id) { V.delVente = null; render(); } }, 6000); return; }
@@ -1956,7 +1974,7 @@ function listView() {
           try { await supprimerVente(vt.id); setVenteSel("a_ranger"); toast("Vente supprimée : ses visites sont dans « À ranger »."); render(); } catch (_) { toast("Suppression impossible. Vérifiez la connexion.", true); }
         } }))));
   }
-  const filtre = v => V.venteSel === "toutes" ? true : V.venteSel === "a_ranger" ? (!v.vente || !V.ventes.has(v.vente)) : V.venteSel === "passees" ? idsPasses.has(v.vente) : v.vente === V.venteSel;
+  const filtre = v => V.venteSel === "toutes" ? true : V.venteSel === "a_ranger" ? (!v.vente || !V.ventes.has(v.vente)) : V.venteSel === "passees" ? idsPasses.has(v.vente) : V.venteSel === "plus" ? idsRanges.has(v.vente) : v.vente === V.venteSel;
   const vs = tout.filter(filtre).sort((a, b) => vt ? ordreRang(a, b) : -ordreVisite(a, b));
   if (!vs.length) { out.push(el("p", { class: "hint", text: !tout.length ? "Aucune visite enregistrée. Créez la première avec « Nouvelle visite »." : V.venteSel === "a_ranger" ? "Toutes les visites sont rangées dans une vente." : "Aucune visite dans cette vente. Appuyez longtemps sur une visite (ou clic droit) pour la ranger ici." })); return out; }
   out.push(el("p", { class: "hint", text: "Appui long sur une visite (clic droit sur ordinateur) pour la ranger dans une vente." }));
