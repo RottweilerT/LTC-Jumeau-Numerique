@@ -589,6 +589,41 @@ h3{margin:0 0 8px;font-family:var(--f-display);font-size:17px;font-weight:600;le
 .login-new label{display:flex;flex-direction:column;gap:5px;font-size:12px;color:var(--muted)}
 .login-err{margin:0;font-size:13px;color:var(--danger)}
 .profil-btn{max-width:220px;overflow:hidden;text-overflow:ellipsis}
+/* Téléphone : en-tête compact (logo, titre et profil sur une ligne, onglets en pleine largeur) */
+@media (max-width:600px){
+  .app{padding-inline:10px;gap:10px}
+  .bar{gap:8px 10px;padding:8px 10px;border-radius:12px}
+  .logo{width:34px;height:34px}
+  .brand{flex:1 1 0}
+  .brand small{font-size:10px}
+  .brand h1{font-size:19px;text-wrap:wrap}
+  #profilBtn{order:2;max-width:38vw;font-size:13px;padding:6px 9px}
+  .bar .tabs{order:4;flex-basis:100%;display:flex}
+  .bar .tabs button{flex:1;padding:9px 4px;font-size:14px;white-space:nowrap;letter-spacing:0}
+  .bar .search{order:5}
+  /* Tableau des lots d'une visite affiché en cartes (plus de défilement horizontal) */
+  .vtable{min-width:0;display:block}
+  .vtable thead{display:none}
+  .vtable tbody{display:block}
+  .vtable tr{display:grid;grid-template-columns:auto minmax(0,1fr) auto;grid-template-areas:"ck lot x" "ck loc loc" "ck fmt time" "ck acts note";gap:6px 12px;align-items:center;padding:10px 12px;border-bottom:1px solid var(--line)}
+  .vtable tr:last-child{border-bottom:0}
+  .vtable td{display:block;padding:0;border:0}
+  .vtable tr.seen{background:color-mix(in srgb,var(--ok) 10%,transparent)}
+  .vtable tr.seen td{background:none}
+  .vtable td[colspan]{grid-column:1/-1}
+  .vtable tr.noted{box-shadow:inset 3px 0 0 var(--accent)}
+  .vtable tr.noted td:first-child{box-shadow:none}
+  .vtable .c-ck{grid-area:ck;align-self:start}
+  .vtable .c-lot{grid-area:lot}
+  .vtable .c-x{grid-area:x;align-self:start}
+  .vtable .c-loc{grid-area:loc}
+  .vtable .c-fmt{grid-area:fmt;color:var(--muted)}
+  .vtable .c-time{grid-area:time;text-align:right;font-size:13px}
+  .vtable .c-acts{grid-area:acts}
+  .vtable .c-note{grid-area:note;justify-self:end}
+  .login-del{font-size:12px;padding:0 10px}
+}
+.login-del{border-color:transparent;background:none}
 </style>
 
 <div class="app" id="app">
@@ -829,7 +864,7 @@ function renderPlan() {
   }
   const murs = walls();
   if (!Array.isArray(c.murs) && !murs.length) svg.append(sv("rect", { x: 0, y: 0, width: W, height: D, class: "walls" }));
-  else if (!murs.length) {
+  else if (!murs.length && !S.racks.size) {
     const t = sv("text", { x: (b.x0 + b.x1) / 2, y: (b.y0 + b.y1) / 2, class: "empty-hint" });
     t.textContent = S.editMode ? "Plan vide · outil Tracer pour dessiner un mur" : "Plan vide · touchez « Modifier le plan »"; svg.append(t);
   } else {
@@ -1872,6 +1907,25 @@ function voirSurPlan(lot) {
   const b = $("#retourVisite"); b.hidden = false; b.textContent = "← Retour à la visite";
 }
 $("#retourVisite").onclick = () => { $("#retourVisite").hidden = true; if (V.retour && V.list.has(V.retour)) { setMode("visites"); ouvrir(V.retour); } else setMode("visites"); V.retour = null; };
+// Historique de navigation seulement (rien n'est enregistré dans la base) : le bouton « Précédent » revient à l'écran d'avant
+let navRestaure = false, navCle = null;
+const navEtat = () => ({ mode: V.mode || "plan", section: V.section, vente: V.venteSel || "", cur: V.mode === "visites" ? (V.cur || "") : "" });
+function pushNav() {
+  if (navRestaure) return;
+  const e = navEtat(), k = JSON.stringify(e);
+  if (k === navCle) return;
+  try { if (navCle === null) history.replaceState({ jumeau: e }, ""); else history.pushState({ jumeau: e }, ""); } catch (_) {}
+  navCle = k;
+}
+window.addEventListener("popstate", ev => {
+  const e = ev.state && ev.state.jumeau; if (!e) return;
+  navRestaure = true;
+  try {
+    V.section = e.section || V.section; V.venteSel = e.vente || ""; V.form = null;
+    if (e.mode === "visites" && e.cur && V.list.has(e.cur)) { V.mode = "visites"; setMode("visites"); ouvrir(e.cur); }
+    else { if (V.mode === "visites") memoriser(); V.cur = null; V.adding = false; V.confirm = null; setMode(e.mode || "plan"); }
+  } finally { navRestaure = false; navCle = JSON.stringify(navEtat()); }
+});
 function setMode(m) {
   V.mode = m;
   document.getElementById("app").classList.toggle("mode-visites", m !== "plan");
@@ -1885,6 +1939,7 @@ function setMode(m) {
   try { localStorage.setItem("onglet", m); } catch (_) {}
   if (m === "visites") { start(); render(); }
   else window.dispatchEvent(new Event("resize"));
+  pushNav();
 }
 $("#tabPlan").onclick = () => setMode("plan");
 $("#tabVis").onclick = () => setMode("visites");
@@ -1937,7 +1992,7 @@ function onglets() {
   const vs = V.open.map(id => V.list.get(id)).filter(Boolean);
   if (!vs.length) return null;
   return el("div", { class: "vtabs", role: "tablist", "aria-label": "Visites ouvertes" },
-    el("button", { class: "vtab all" + (!V.cur ? " on" : ""), role: "tab", "aria-selected": String(!V.cur), text: "Toutes les visites", onclick: () => { memoriser(); V.cur = null; V.adding = false; V.confirm = null; render(); } }),
+    el("button", { class: "vtab all" + (!V.cur ? " on" : ""), role: "tab", "aria-selected": String(!V.cur), text: "← Liste des visites", title: "Revenir à la liste des visites de la vente", onclick: () => { memoriser(); V.cur = null; V.adding = false; V.confirm = null; render(); } }),
     vs.map(v => {
       const n = (v.lots || []).length, vu = (v.lots || []).filter(l => l.vu).length, on = V.cur === v.id;
       return el("div", { class: "vtab" + (on ? " on" : "") + (v.statut === "terminee" ? " done" : "") },
@@ -2154,6 +2209,7 @@ function render() {
   const keep = a && root.contains(a) && a.id ? { id: a.id, s: a.selectionStart, val: a.value } : null;
   const sc = { root: root.scrollTop, win: window.scrollY, list: root.querySelector(".addlist")?.scrollTop || 0 };
   root.replaceChildren(...[onglets(), ...(V.cur && V.list.get(V.cur) ? detail(V.list.get(V.cur)) : listView())].filter(Boolean));
+  if (V.mode === "visites") pushNav();
   const al = root.querySelector(".addlist"); if (al) al.scrollTop = sc.list;
   root.querySelectorAll(".vventes").forEach(r => { const c = r.querySelector(".vchip.on"); if (c) { const l = c.offsetLeft - r.offsetLeft; if (l < r.scrollLeft || l + c.offsetWidth > r.scrollLeft + r.clientWidth) r.scrollLeft = Math.max(0, l - 8); } });
   const tb = root.querySelector(".vtabs"), on = tb?.querySelector(".vtab.on");
@@ -2335,14 +2391,14 @@ function detail(v) {
     const annuleRevu = revus.length ? el("button", { class: "xbtn small", title: "Annuler le dernier « revu »", "aria-label": "Annuler le dernier passage du lot " + l.lot, text: "↶", onclick: () => { V.confirm = { lot: l.lot, kind: "unrevu" }; render(); } }) : null;
     const btnNote = el("button", { class: "btn small note-btn" + (l.note ? " on" : ""), title: l.note ? "Modifier l'annotation" : "Annoter ce lot (remarque du client)", text: l.note ? "✎ Note" : "✎ Annoter", onclick: () => { V.noteEdit = l.lot; render(); setTimeout(() => $("#note-" + l.lot)?.focus(), 30); } });
     tb.append(el("tr", { class: (seen ? "seen" : "") + (l.note ? " noted" : "") },
-      el("td", {}, ck),
-      el("td", {}, el("div", { class: "lotno", text: l.lot }), e.idlot ? el("div", { class: "sub", text: "Réf. " + e.idlot }) : null, l.note && V.noteEdit !== l.lot ? el("div", { class: "note-txt", text: "« " + l.note + " »" }) : null),
-      el("td", {}, el("div", { class: "loc-cell" }, el("span", { text: e.locs.join(" + ") }), boutonPlan(l.lot))),
-      el("td", {}, fmtFormat(e)),
-      el("td", { class: "time" }, ...heures),
-      el("td", {}, el("div", { class: "lot-acts" }, el("span", { class: seen ? "stat-vu" : "stat-ap", text: seen ? "Vu" : "À présenter" }), btnRevu, annuleRevu)),
-      el("td", {}, btnNote),
-      el("td", {}, el("button", { class: "xbtn", title: "Retirer de la sélection", "aria-label": "Retirer le lot " + l.lot, text: "×", onclick: () => { V.confirm = { lot: l.lot, kind: "remove" }; render(); } }))));
+      el("td", { class: "c-ck" }, ck),
+      el("td", { class: "c-lot" }, el("div", { class: "lotno", text: l.lot }), e.idlot ? el("div", { class: "sub", text: "Réf. " + e.idlot }) : null, l.note && V.noteEdit !== l.lot ? el("div", { class: "note-txt", text: "« " + l.note + " »" }) : null),
+      el("td", { class: "c-loc" }, el("div", { class: "loc-cell" }, el("span", { text: e.locs.join(" + ") }), boutonPlan(l.lot))),
+      el("td", { class: "c-fmt" }, fmtFormat(e)),
+      el("td", { class: "time c-time" }, ...heures),
+      el("td", { class: "c-acts" }, el("div", { class: "lot-acts" }, el("span", { class: seen ? "stat-vu" : "stat-ap", text: seen ? "Vu" : "À présenter" }), btnRevu, annuleRevu)),
+      el("td", { class: "c-note" }, btnNote),
+      el("td", { class: "c-x" }, el("button", { class: "xbtn", title: "Retirer de la sélection", "aria-label": "Retirer le lot " + l.lot, text: "×", onclick: () => { V.confirm = { lot: l.lot, kind: "remove" }; render(); } }))));
     if (V.noteEdit === l.lot) {
       const ta = el("textarea", { id: "note-" + l.lot, class: "note-edit", placeholder: "Remarque du client sur ce lot (état, intérêt, question…)" }); ta.value = l.note || "";
       const save = txt => { V.noteEdit = null; const t = txt.trim(); if (t === (l.note || "")) { render(); return; } patch(v.id, { lots: majLot(l.lot, x => ({ ...x, note: t || null, noteMaj: t ? new Date().toISOString() : null })), historique: hist(v, t ? "note" : "note_suppr", l.lot, t ? { texte: t } : null) }); };
@@ -2674,7 +2730,7 @@ async function exportPdf(v, jour, numJour, nbJours) {
 }
 
 let m0 = "plan"; try { m0 = localStorage.getItem("onglet") || "plan"; } catch (_) {}
-if (m0 === "visites" || m0 === "notes") setMode(m0);
+if (m0 === "visites" || m0 === "notes") setMode(m0); else { V.mode = V.mode || "plan"; pushNav(); }
 const wait = setInterval(() => { if (T.db) { start(); if (V.mode === "notes") notesStart(); clearInterval(wait); } }, 300);
 })();
 </script>
