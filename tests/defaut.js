@@ -1,0 +1,22 @@
+const { chromium } = require('playwright'); const fs = require('fs');
+(async () => {
+  const b = await chromium.launch(); const data = JSON.parse(fs.readFileSync('/tmp/demo.json', 'utf8')); const errs = [];
+  const ctx = await b.newContext({ viewport: { width: 390, height: 844 } });
+  await ctx.route('**/*', r => { const u = r.request().url();
+    if (u.includes('firebase-app-compat')) return r.fulfill({ contentType: 'text/javascript', body: fs.readFileSync('tests/fake-firebase.js', 'utf8') });
+    if (u.includes('firebase-firestore-compat')) return r.fulfill({ contentType: 'text/javascript', body: '' });
+    if (u.endsWith('firebase-config.js')) return r.fulfill({ contentType: 'text/javascript', body: 'const FIREBASE_CONFIG = { apiKey: "x", projectId: "test" };' });
+    if (u.startsWith('http://localhost')) return r.continue(); return r.abort(); });
+  const p = await ctx.newPage(); p.on('pageerror', e => errs.push(e.message));
+  await p.goto('http://localhost:8765/importer.html');
+  await p.evaluate(d => { localStorage.clear(); localStorage.setItem('__fakefs', JSON.stringify(d)); localStorage.setItem('jumeau-profil', 'p_a'); localStorage.setItem('jumeau-profil-nom', 'Armand Charrin'); localStorage.setItem('visites-ouvertes', '["c"]'); }, data);
+  await p.goto('http://localhost:8765/'); await p.waitForTimeout(900);
+  await p.click('#tabVis'); await p.waitForTimeout(300); await p.click('.vtab-go:has-text("Thorell")'); await p.waitForTimeout(500); console.log(await p.locator('.filters button').evaluateAll(bs => bs.map(b => b.textContent + '=' + b.getAttribute('aria-pressed'))));
+  console.log('filtre actif :', await p.textContent('.filters button[aria-pressed]'), '| lignes :', await p.locator('.vtable tbody tr').count());
+  await p.locator('.ck').first().click(); await p.waitForTimeout(400);
+  console.log('après coche :', await p.locator('.vtable tbody tr').count(), '|', await p.textContent('.filters button[aria-pressed]'));
+  const bas = p.locator('#visits button:has-text("+ Ajouter des lots")'); console.log('boutons ajout :', await bas.count());
+  await bas.last().click(); await p.waitForTimeout(300);
+  const box = await p.locator('.addbox').first().boundingBox(), tab = await p.locator('.vtable').boundingBox();
+  console.log('ajout sous le tableau :', box.y > tab.y + tab.height, errs); await b.close();
+})();

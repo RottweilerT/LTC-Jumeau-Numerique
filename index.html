@@ -1828,7 +1828,7 @@ setInterval(() => { if (!S.sel && !S.editMode && !document.activeElement?.matche
 const T = window.__twin; if (!T) return;
 const { el, toast } = T;
 const $ = s => document.querySelector(s);
-const V = { list: new Map(), loaded: false, cur: null, filter: "tous", form: null, adding: false, addQ: "", addSel: new Set(), confirm: null, mode: "plan", sub: false };
+const V = { list: new Map(), loaded: false, cur: null, filter: "apresenter", form: null, adding: false, addQ: "", addSel: new Set(), confirm: null, mode: "plan", sub: false };
 const pad = n => String(n).padStart(2, "0");
 const today = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
 const nowHM = () => { const d = new Date(); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
@@ -1978,7 +1978,7 @@ function ouvrir(id) {
   }
   memoriser();
   const e = V.etat[id] || {};
-  V.cur = id; V.filter = e.filter || "tous"; V.adding = false; V.confirm = null; V.delArm = null; V.addSel = new Set(); V.addQ = ""; V.addTxt = { text: "" };
+  V.cur = id; V.filter = e.filter || "apresenter"; V.adding = false; V.confirm = null; V.delArm = null; V.addSel = new Set(); V.addQ = ""; V.addTxt = { text: "" };
   render();
   requestAnimationFrame(() => { vRoot().scrollTop = e.ry || 0; window.scrollTo(0, e.y || 0); });
   return true;
@@ -2366,8 +2366,8 @@ function detail(v) {
   out.push(el("div", { class: "vacts" },
     el("div", { class: "filters" }, fb("tous", `Tous les lots (${n})`), fb("apresenter", `Lots à présenter (${n - vu})`), fb("vus", `Lots déjà vus (${vu})`), fb("notes", `Lots annotés (${lots.filter(l => l.note).length})`)),
     el("span", { class: "sp" }),
-    el("button", { class: "btn" + (V.adding ? " on" : ""), text: V.adding ? "Fermer l'ajout" : "+ Ajouter des lots", onclick: () => { V.adding = !V.adding; V.addSel = new Set(); V.addQ = ""; render(); } })));
-  if (V.adding) out.push(addBox(v, cat));
+    el("button", { class: "btn" + (V.adding && V.addBas !== true ? " on" : ""), text: V.adding && V.addBas !== true ? "Fermer l'ajout" : "+ Ajouter des lots", onclick: () => { V.adding = !(V.adding && V.addBas !== true); V.addBas = false; V.addSel = new Set(); V.addQ = ""; render(); } })));
+  if (V.adding && !V.addBas) out.push(addBox(v, cat));
 
   // Tableau
   const rows = lots.filter(l => V.filter === "tous" || (V.filter === "notes" ? !!l.note : V.filter === "vus" ? l.vu : !l.vu));
@@ -2380,6 +2380,7 @@ function detail(v) {
       if (ck.checked) {
         const t = new Date().toISOString(); // heure réelle du clic
         patch(v.id, { lots: lots.map(x => x.lot === l.lot ? { ...x, vu: t } : x), historique: hist(v, "vu", l.lot, { heure: t }) });
+        if (V.filter === "apresenter") toast(`Lot ${l.lot} vu à ${fT(t)} · il passe dans « Lots déjà vus »`);
       } else { ck.checked = true; V.confirm = { lot: l.lot, kind: "uncheck" }; render(); }
     });
     const revus = l.revus || [];
@@ -2428,6 +2429,11 @@ function detail(v) {
   if (!rows.length) tb.append(el("tr", {}, el("td", { colspan: 8, class: "hint", text: n ? (V.filter === "notes" ? "Aucun lot annoté pour l'instant : utilisez « ✎ Annoter » sur une ligne." : "Aucun lot dans ce filtre.") : "Aucun lot sélectionné. Utilisez « + Ajouter des lots »." })));
   out.push(el("div", { class: "vtable-wrap" }, el("table", { class: "vtable" },
     el("thead", {}, el("tr", {}, ["Statut", "N° de lot", "Localisation", "Format", "Heure(s) de présentation", "", "Annotation", ""].map(h => el("th", { text: h })))), tb)));
+
+  // Ajouter des lots aussi en bas de la liste
+  out.push(el("div", { class: "vacts" }, el("span", { class: "sp" }),
+    el("button", { class: "btn" + (V.adding && V.addBas ? " on" : ""), text: V.adding && V.addBas ? "Fermer l'ajout" : "+ Ajouter des lots", onclick: () => { const o = !(V.adding && V.addBas); V.adding = o; V.addBas = o; V.addSel = new Set(); V.addQ = ""; render(); } })));
+  if (V.adding && V.addBas) out.push(addBox(v, cat));
 
   // Récapitulatif des lots annotés de la visite
   const annotes = lots.filter(l => l.note);
