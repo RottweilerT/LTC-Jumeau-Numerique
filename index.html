@@ -508,6 +508,9 @@ h3{margin:0 0 8px;font-family:var(--f-display);font-size:17px;font-weight:600;le
 .vente-nom{font-family:var(--f-display);font-size:24px;line-height:1.1}
 .vente-ligne{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;font-size:14px}
 .vente-choix{display:flex;flex-direction:column;gap:6px;max-height:50vh;overflow:auto}
+.etat-ligne{flex-basis:100%;display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.seg.etat-vente button{font-size:15px;padding:8px 14px}
+.seg.etat-vente button[aria-pressed="true"]{background:var(--carton);color:#12223F}
 .vente-choix .btn{text-align:left;white-space:normal}
 .vente-choix .btn.on{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 10%,var(--surface))}
 .vitem{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
@@ -1821,7 +1824,7 @@ function start() {
   T.db.doc("config/ventes").onSnapshot(s => {
     const l = (s.exists && s.data().liste) || {};
     V.ventes = new Map(Object.entries(l).filter(([, x]) => x && x.nom).map(([id, x]) => [id, { id, ...x }]));
-    if (!["a_ranger", "toutes", "passees", "plus"].includes(V.venteSel) && !V.ventes.has(V.venteSel)) V.venteSel = "a_ranger";
+    if (!["a_ranger", "toutes", "passees", "avenir"].includes(V.venteSel) && !V.ventes.has(V.venteSel)) V.venteSel = "a_ranger";
     render();
   }, () => {});
   T.db.collection("visites").onSnapshot(s => {
@@ -1937,26 +1940,37 @@ function onglets() {
 
 /* ---- Ventes : chaque visite peut être rangée dans une vente ---- */
 V.ventes = new Map();
-V.venteSel = (() => { try { return localStorage.getItem("vente-affichee") || "a_ranger"; } catch (_) { return "a_ranger"; } })();
+V.venteSel = (() => { try { const x = localStorage.getItem("vente-affichee") || "a_ranger"; return x === "plus" ? "a_ranger" : x; } catch (_) { return "a_ranger"; } })();
 const setVenteSel = id => { V.venteSel = id; try { localStorage.setItem("vente-affichee", id); } catch (_) {} };
 // Ventes de la plus proche à la plus lointaine (date croissante) ; celles sans date à la fin
 const ventesTriees = () => [...V.ventes.values()].sort((a, b) => (!a.date) - (!b.date) || String(a.date || "").localeCompare(String(b.date || "")) || String(a.creee || "").localeCompare(String(b.creee || "")));
 const nomClient = v => `${v.prenom || ""} ${v.nom || ""}`.trim() || "Client sans nom";
 const ordreVisite = (a, b) => String(a.date || "").localeCompare(String(b.date || "")) || String(a.heure || "").localeCompare(String(b.heure || "")) || String(a.creee || "").localeCompare(String(b.creee || ""));
-// Ventes terminées : date de la vente antérieure à aujourd'hui (rangées automatiquement dans « Ventes terminées », la plus récente d'abord)
-const estPassee = x => !!(x && x.date && x.date < today());
-// Ventes à venir affichées dans la barre ; celles rangées à la main vont dans « ⋯ »
-const ventesAVenir = () => ventesTriees().filter(x => !estPassee(x) && !x.rangee);
-const ventesRangees = () => ventesTriees().filter(x => !estPassee(x) && x.rangee);
+// Classement d'une vente : « en_cours » (affichée directement dans la barre), « a_venir » ou « passee » (regroupées derrière une puce).
+// Choix manuel enregistré dans « etat » ; sans choix : passée si sa date est dépassée, sinon en cours (ancien « rangee » → à venir).
+const ETATS = [["en_cours", "En cours"], ["a_venir", "À venir"], ["passee", "Passée"]];
+const etatVente = x => !x ? "en_cours" : ETATS.some(([k]) => k === x.etat) ? x.etat : x.date && x.date < today() ? "passee" : x.rangee ? "a_venir" : "en_cours";
+const estPassee = x => etatVente(x) === "passee";
+const ventesEnCours = () => ventesTriees().filter(x => etatVente(x) === "en_cours");
+const ventesAVenir = () => ventesTriees().filter(x => etatVente(x) === "a_venir");
+const ventesPassees = () => ventesTriees().filter(estPassee).reverse();
+const libEtat = { en_cours: "Vente en cours", a_venir: "Vente à venir", passee: "Vente passée" };
+async function classerVente(x, etat) {
+  if (etatVente(x) === etat) return;
+  await majVente(x.id, { etat, rangee: firebase.firestore.FieldValue.delete() });
+  toast(`« ${x.nom} » rangée dans ${etat === "en_cours" ? "les ventes en cours" : etat === "a_venir" ? "les ventes à venir" : "les ventes passées"}`);
+}
+// Sélecteur En cours / À venir / Passée
+const choixEtat = (x, apres) => el("div", { class: "seg etat-vente", role: "group", "aria-label": "Ranger la vente dans" },
+  ETATS.map(([k, lab]) => el("button", { type: "button", "aria-pressed": String(etatVente(x) === k), text: lab, onclick: async () => { try { await classerVente(x, k); } catch (_) { toast("Enregistrement impossible. Vérifiez la connexion.", true); } if (apres) apres(); } })));
 function menuVente(x) {
   modale(x.nom, close => [
-    el("span", { class: "vmeta", text: estPassee(x) ? "Vente terminée : elle est rangée automatiquement dans « Ventes terminées »." : x.rangee ? "Cette vente est rangée dans « ⋯ »." : "Cette vente est affichée dans la barre." }),
+    el("span", { class: "vmeta", text: "Ranger cette vente dans :" }),
+    choixEtat(x, close),
     el("div", { class: "vente-choix" },
-      !estPassee(x) ? el("button", { class: "btn big", text: x.rangee ? "Remettre dans la barre" : "Ranger dans « ⋯ »", onclick: async () => { close(); await majVente(x.id, { rangee: !x.rangee }); toast(x.rangee ? "Vente remise dans la barre" : "Vente rangée dans « ⋯ »"); if (!x.rangee && V.venteSel === x.id) setVenteSel("a_ranger"); render(); } }) : null,
       el("button", { class: "btn big", text: "Renommer / changer la date", onclick: () => { close(); modale("Modifier la vente", c2 => [formVente(c2, async (n, d) => majVente(x.id, { nom: n, date: d }), x)]); } })),
     el("div", { class: "vacts" }, el("span", { class: "sp" }), el("button", { class: "btn", text: "Fermer", onclick: close }))]);
 }
-const ventesPassees = () => ventesTriees().filter(estPassee).reverse();
 // Numéro du client = ordre dans la vente selon l'heure du premier lot coché de chaque visite
 // (un client dont aucun lot n'est encore coché passe après, dans l'ordre des visites)
 const premierVu = v => (v.lots || []).reduce((m, l) => l.vu && (!m || l.vu < m) ? l.vu : m, null);
@@ -2007,12 +2021,14 @@ function nouvelleVente(apres) {
 }
 function menuRanger(v) {
   modale(`Ranger la visite de ${nomClient(v)}`, close => {
-    const vts = ventesTriees(), av = [...ventesAVenir(), ...ventesRangees()], pa = ventesPassees();
+    const vts = ventesTriees(), ec = ventesEnCours(), av = ventesAVenir(), pa = ventesPassees();
     const bt = x => el("button", { class: "btn big" + (v.vente === x.id ? " on" : ""), type: "button", onclick: async () => { close(); await ranger(v, x.id); } },
       el("span", { text: x.nom }), x.date ? el("small", { text: " · " + fDate(x.date) }) : null, v.vente === x.id ? el("small", { text: " (actuelle)" }) : null);
     return [
       el("span", { class: "vmeta", text: vts.length ? "Choisissez la vente :" : "Aucune vente pour l'instant : créez-en une." }),
-      el("div", { class: "vente-choix" }, av.map(bt), pa.length ? el("div", { class: "eyebrow", style: "margin-top:6px", text: "Ventes terminées" }) : null, pa.map(bt)),
+      el("div", { class: "vente-choix" }, ec.map(bt),
+        av.length ? el("div", { class: "eyebrow", style: "margin-top:6px", text: "Ventes à venir" }) : null, av.map(bt),
+        pa.length ? el("div", { class: "eyebrow", style: "margin-top:6px", text: "Ventes passées" }) : null, pa.map(bt)),
       el("div", { class: "vacts" },
         el("button", { class: "btn big", type: "button", text: "+ Nouvelle vente", onclick: () => { close(); nouvelleVente(async id => ranger(v, id)); } }),
         v.vente ? el("button", { class: "btn big", type: "button", text: "Retirer de la vente", onclick: async () => { close(); await ranger(v, null); } }) : null,
@@ -2140,39 +2156,41 @@ function listView() {
   if (!V.loaded) { out.push(el("p", { class: "hint", text: "Chargement des visites…" })); return out; }
   const tout = [...V.list.values()];
   const passees = ventesPassees(), idsPasses = new Set(passees.map(x => x.id));
-  const rangees = ventesRangees(), idsRanges = new Set(rangees.map(x => x.id));
-  const nb = id => id === "toutes" ? tout.length : id === "a_ranger" ? tout.filter(v => !v.vente || !V.ventes.has(v.vente)).length : id === "passees" ? tout.filter(v => idsPasses.has(v.vente)).length : id === "plus" ? tout.filter(v => idsRanges.has(v.vente)).length : tout.filter(v => v.vente === id).length;
+  const avenir = ventesAVenir(), idsAVenir = new Set(avenir.map(x => x.id));
+  const nb = id => id === "toutes" ? tout.length : id === "a_ranger" ? tout.filter(v => !v.vente || !V.ventes.has(v.vente)).length : id === "passees" ? tout.filter(v => idsPasses.has(v.vente)).length : id === "avenir" ? tout.filter(v => idsAVenir.has(v.vente)).length : tout.filter(v => v.vente === id).length;
   const dansPassees = V.venteSel === "passees" || idsPasses.has(V.venteSel);
-  const dansPlus = V.venteSel === "plus" || idsRanges.has(V.venteSel);
+  const dansAVenir = V.venteSel === "avenir" || idsAVenir.has(V.venteSel);
   const chip = (id, lab, on, title) => el("button", { class: "vchip" + ((on ?? V.venteSel === id) ? " on" : ""), "aria-pressed": String(on ?? V.venteSel === id), title: title || null, onclick: () => { setVenteSel(id); render(); } },
     el("span", { text: lab }), el("span", { class: "n", text: String(nb(id)) }));
-  // Puce d'une vente : appui long ou clic droit → ranger dans « ⋯ » / remettre dans la barre
+  // Puce d'une vente : appui long ou clic droit → la ranger dans en cours / à venir / passées
   const chipVente = (x, lab) => { const c = chip(x.id, lab || x.nom, undefined, "Appui long ou clic droit : ranger cette vente"); appuiLong(c, () => menuVente(V.ventes.get(x.id) || x)); return c; };
+  // Barre : les ventes en cours directement, puis les groupes « À venir » et « Ventes passées »
   out.push(el("div", { class: "vventes", role: "group", "aria-label": "Ventes" },
-    chip("a_ranger", "À ranger"), ventesAVenir().map(x => chipVente(x)),
-    rangees.length ? chip("plus", "⋯", dansPlus, "Ventes rangées") : null,
-    passees.length ? chip("passees", "Ventes terminées", dansPassees) : null, chip("toutes", "Toutes"),
+    ventesEnCours().map(x => chipVente(x)),
+    chip("a_ranger", "À ranger"),
+    avenir.length ? chip("avenir", "À venir", dansAVenir, "Ventes à venir") : null,
+    passees.length ? chip("passees", "Ventes passées", dansPassees, "Ventes passées") : null, chip("toutes", "Toutes"),
     el("button", { class: "vchip add", text: "+ Nouvelle vente", onclick: () => nouvelleVente() })));
-  if (dansPlus) out.push(el("div", { class: "vventes sous", role: "group", "aria-label": "Ventes rangées" },
-    rangees.map(x => chipVente(x, x.nom + (x.date ? " · " + fDate(x.date) : "")))));
-  if (dansPassees) out.push(el("div", { class: "vventes sous", role: "group", "aria-label": "Ventes terminées" },
+  if (dansAVenir) out.push(el("div", { class: "vventes sous", role: "group", "aria-label": "Ventes à venir" },
+    avenir.map(x => chipVente(x, x.nom + (x.date ? " · " + fDate(x.date) : "")))));
+  if (dansPassees) out.push(el("div", { class: "vventes sous", role: "group", "aria-label": "Ventes passées" },
     passees.map(x => chipVente(x, x.nom + (x.date ? " · " + fDate(x.date) : "")))));
   const vt = V.ventes.get(V.venteSel);
   if (vt) {
     const armedV = V.delVente === vt.id;
     out.push(el("div", { class: "vcard vente-tete" },
-      el("div", {}, el("div", { class: "eyebrow", text: estPassee(vt) ? "Vente terminée" : vt.rangee ? "Vente rangée dans « ⋯ »" : "Vente" }), el("b", { class: "vente-nom", text: vt.nom }), el("div", { class: "vmeta", text: (vt.date ? "le " + fDate(vt.date) + " · " : "") + `${nb(vt.id)} visite${nb(vt.id) > 1 ? "s" : ""}` })),
+      el("div", {}, el("div", { class: "eyebrow", text: libEtat[etatVente(vt)] }), el("b", { class: "vente-nom", text: vt.nom }), el("div", { class: "vmeta", text: (vt.date ? "le " + fDate(vt.date) + " · " : "") + `${nb(vt.id)} visite${nb(vt.id) > 1 ? "s" : ""}` })),
       el("div", { class: "vacts" },
         el("button", { class: "btn small", text: "Lots annotés", onclick: () => recapVente(vt.nom, tout.filter(v => v.vente === vt.id)) }),
-        !estPassee(vt) ? el("button", { class: "btn small", text: vt.rangee ? "Remettre dans la barre" : "Ranger dans « ⋯ »", onclick: async () => { await majVente(vt.id, { rangee: !vt.rangee }); toast(vt.rangee ? "Vente remise dans la barre" : "Vente rangée dans « ⋯ »"); } }) : null,
         el("button", { class: "btn small", text: "Renommer", onclick: () => modale("Modifier la vente", close => [formVente(close, async (n, d) => majVente(vt.id, { nom: n, date: d }), vt)]) }),
         el("button", { class: "btn small danger" + (armedV ? " armed" : ""), text: armedV ? "Confirmer : supprimer la vente" : "Supprimer la vente", title: "Les visites ne sont pas supprimées : elles retournent dans « À ranger ».", onclick: async () => {
           if (!armedV) { V.delVente = vt.id; render(); setTimeout(() => { if (V.delVente === vt.id) { V.delVente = null; render(); } }, 6000); return; }
           V.delVente = null;
           try { await supprimerVente(vt.id); setVenteSel("a_ranger"); toast("Vente supprimée : ses visites sont dans « À ranger »."); render(); } catch (_) { toast("Suppression impossible. Vérifiez la connexion.", true); }
-        } }))));
+        } })),
+      el("div", { class: "etat-ligne" }, el("span", { class: "vmeta", text: "Ranger dans :" }), choixEtat(vt))));
   }
-  const filtre = v => V.venteSel === "toutes" ? true : V.venteSel === "a_ranger" ? (!v.vente || !V.ventes.has(v.vente)) : V.venteSel === "passees" ? idsPasses.has(v.vente) : V.venteSel === "plus" ? idsRanges.has(v.vente) : v.vente === V.venteSel;
+  const filtre = v => V.venteSel === "toutes" ? true : V.venteSel === "a_ranger" ? (!v.vente || !V.ventes.has(v.vente)) : V.venteSel === "passees" ? idsPasses.has(v.vente) : V.venteSel === "avenir" ? idsAVenir.has(v.vente) : v.vente === V.venteSel;
   const vs = tout.filter(filtre).sort((a, b) => vt ? ordreRang(a, b) : -ordreVisite(a, b));
   if (!vs.length) { out.push(el("p", { class: "hint", text: !tout.length ? "Aucune visite enregistrée. Créez la première avec « Nouvelle visite »." : V.venteSel === "a_ranger" ? "Toutes les visites sont rangées dans une vente." : "Aucune visite dans cette vente. Appuyez longtemps sur une visite (ou clic droit) pour la ranger ici." })); return out; }
   out.push(el("p", { class: "hint", text: "Appui long sur une visite (clic droit sur ordinateur) pour la ranger dans une vente." }));
