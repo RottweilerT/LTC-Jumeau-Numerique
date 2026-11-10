@@ -315,6 +315,7 @@ h3{margin:0 0 8px;font-family:var(--f-display);font-size:17px;font-weight:600;le
 .vitem{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
 .vitem .rang{display:inline-block;margin-right:8px;padding:1px 8px;border-radius:6px;background:var(--brand);color:var(--brand-ink);font-family:var(--f-mono);font-size:13px;vertical-align:3px}
 .notes-txt{flex:1;min-height:60vh;width:100%;padding:14px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);font:16px/1.55 var(--f-body);resize:vertical}
+.plan-btn{white-space:nowrap}
 .lot-acts{display:flex;flex-direction:column;align-items:flex-start;gap:6px}
 .btn.revu{white-space:nowrap}
 .xbtn.small{font-size:16px;padding:2px 6px}
@@ -403,7 +404,7 @@ h3{margin:0 0 8px;font-family:var(--f-display);font-size:17px;font-weight:600;le
       <div class="overlay" id="overlay" hidden></div>
       <div class="editflag" id="editflag" hidden></div>
       <div class="float" id="float" hidden role="dialog" aria-label="Détail de l'élément"></div>
-      <div class="stage-acts"><button class="btn" id="editBtn" hidden>Modifier le plan</button><button class="btn primary" id="addRack" hidden>+ Étagère</button></div>
+      <div class="stage-acts"><button class="btn primary" id="retourVisite" hidden>← Retour à la visite</button><button class="btn" id="editBtn" hidden>Modifier le plan</button><button class="btn primary" id="addRack" hidden>+ Étagère</button></div>
       <div class="zoom" id="zoom">
         <button id="zIn" aria-label="Zoomer">+</button>
         <button id="zOut" aria-label="Dézoomer">−</button>
@@ -1558,7 +1559,9 @@ async function boot() {
   db.collection("racks").onSnapshot(s => { s.docs.forEach(d => { const t = d.data().type; if ((t === "chien" || t === "lapin") && d.ref) d.ref.delete().catch(() => {}); }); S.racks = new Map(s.docs.map(d => [d.id, { id: d.id, ...d.data() }]).filter(([, r]) => r.type !== "chien" && r.type !== "lapin")); S.loaded.racks = true; changed(); }, dbErr);
   db.collection("items").onSnapshot(s => { S.items = new Map(s.docs.map(d => [d.id, { id: d.id, ...d.data() }])); S.loaded.items = true; changed(); }, dbErr);
 }
-window.__twin = { S, get db() { return db; }, get uid() { return uid; }, get user() { return user; }, rackName, toast, el, listeners: [] };
+window.__twin = { S, get db() { return db; }, get uid() { return uid; }, get user() { return user; }, rackName, toast, el, listeners: [],
+  // Depuis une visite : montrer le lot en rouge sur le plan
+  montrerLot: lot => montrer({ nom: String(lot) }) };
 boot();
 setInterval(() => { if (!S.sel && !S.editMode && !document.activeElement?.matches?.("input,select,textarea")) renderPanel(); }, 60000);
 })();
@@ -1643,6 +1646,13 @@ T.exportAll = async () => {
 T.listeners.push(() => { start(); if (V.mode === "visites" && !V.confirm && !document.activeElement?.matches?.("input,textarea")) render(); });
 
 /* ---- Onglets ---- */
+function voirSurPlan(lot) {
+  V.retour = V.cur;
+  setMode("plan");
+  T.montrerLot(lot);
+  const b = $("#retourVisite"); b.hidden = false; b.textContent = "← Retour à la visite";
+}
+$("#retourVisite").onclick = () => { $("#retourVisite").hidden = true; if (V.retour && V.list.has(V.retour)) { setMode("visites"); ouvrir(V.retour); } else setMode("visites"); V.retour = null; };
 function setMode(m) {
   V.mode = m;
   document.getElementById("app").classList.toggle("mode-visites", m !== "plan");
@@ -1652,6 +1662,7 @@ function setMode(m) {
   $("#visits").hidden = m !== "visites";
   $("#notes").hidden = m !== "notes";
   if (m === "notes") notesStart();
+  if (m !== "plan") $("#retourVisite").hidden = true;
   try { localStorage.setItem("onglet", m); } catch (_) {}
   if (m === "visites") { start(); render(); }
   else window.dispatchEvent(new Event("resize"));
@@ -2067,25 +2078,26 @@ function detail(v) {
       el("td", { class: "time" }, ...heures),
       el("td", {}, el("div", { class: "lot-acts" }, el("span", { class: seen ? "stat-vu" : "stat-ap", text: seen ? "Vu" : "À présenter" }), btnRevu, annuleRevu)),
       el("td", {}, btnNote),
+      el("td", {}, el("button", { class: "btn small plan-btn", title: "Voir où se trouve ce lot sur le plan", "aria-label": "Voir le lot " + l.lot + " sur le plan", onclick: () => voirSurPlan(l.lot) }, el("span", { "aria-hidden": "true", text: "🗺️" }), " Plan")),
       el("td", {}, el("button", { class: "xbtn", title: "Retirer de la sélection", "aria-label": "Retirer le lot " + l.lot, text: "×", onclick: () => { V.confirm = { lot: l.lot, kind: "remove" }; render(); } }))));
     if (V.noteEdit === l.lot) {
       const ta = el("textarea", { id: "note-" + l.lot, class: "note-edit", placeholder: "Remarque du client sur ce lot (état, intérêt, question…)" }); ta.value = l.note || "";
       const save = txt => { V.noteEdit = null; const t = txt.trim(); if (t === (l.note || "")) { render(); return; } patch(v.id, { lots: majLot(l.lot, x => ({ ...x, note: t || null, noteMaj: t ? new Date().toISOString() : null })), historique: hist(v, t ? "note" : "note_suppr", l.lot, t ? { texte: t } : null) }); };
       ta.addEventListener("keydown", ev => { if (ev.key === "Enter" && (ev.ctrlKey || ev.metaKey)) save(ta.value); if (ev.key === "Escape") { V.noteEdit = null; render(); } });
-      tb.append(el("tr", { class: "note-row" }, el("td", { colspan: 8 }, el("div", { class: "note-box" }, el("b", { text: "Annotation du lot " + l.lot }), ta,
+      tb.append(el("tr", { class: "note-row" }, el("td", { colspan: 9 }, el("div", { class: "note-box" }, el("b", { text: "Annotation du lot " + l.lot }), ta,
         el("div", { class: "vacts" }, el("button", { class: "btn primary", text: "Enregistrer", onclick: () => save(ta.value) }),
           l.note ? el("button", { class: "btn danger", text: "Supprimer l'annotation", onclick: () => save("") }) : null,
           el("span", { class: "sp" }), el("button", { class: "btn", text: "Annuler", onclick: () => { V.noteEdit = null; render(); } }))))));
     }
     if (V.confirm && V.confirm.lot === l.lot && V.confirm.kind === "unrevu") {
       const der = revus[revus.length - 1];
-      tb.append(el("tr", { class: "confirm-row" }, el("td", { colspan: 8 }, el("div", { class: "vacts" }, el("span", { text: `Annuler le dernier passage du lot ${l.lot} (${revus.length + 1}e fois à ${fT(der)}) ? L'action reste inscrite dans l'historique.` }), el("span", { class: "sp" }),
+      tb.append(el("tr", { class: "confirm-row" }, el("td", { colspan: 9 }, el("div", { class: "vacts" }, el("span", { text: `Annuler le dernier passage du lot ${l.lot} (${revus.length + 1}e fois à ${fT(der)}) ? L'action reste inscrite dans l'historique.` }), el("span", { class: "sp" }),
         el("button", { class: "btn danger armed", text: "Oui, annuler", onclick: () => { V.confirm = null; patch(v.id, { lots: majLot(l.lot, x => ({ ...x, revus: (x.revus || []).slice(0, -1) })), historique: hist(v, "revu_annule", l.lot, { ancien: der }) }); } }),
         el("button", { class: "btn", text: "Garder", onclick: () => { V.confirm = null; render(); } })))));
     } else if (V.confirm && V.confirm.lot === l.lot) {
       const c = V.confirm;
       const msg = c.kind === "uncheck" ? `Retirer le statut « Vu » du lot ${l.lot} (présenté à ${fT(l.vu)}) ? L'action reste inscrite dans l'historique.` : `Retirer le lot ${l.lot} de cette visite ?${seen ? " Il a déjà été présenté." : ""}`;
-      tb.append(el("tr", { class: "confirm-row" }, el("td", { colspan: 8 }, el("div", { class: "vacts" }, el("span", { text: msg }), el("span", { class: "sp" }),
+      tb.append(el("tr", { class: "confirm-row" }, el("td", { colspan: 9 }, el("div", { class: "vacts" }, el("span", { text: msg }), el("span", { class: "sp" }),
         el("button", { class: "btn danger armed", text: c.kind === "uncheck" ? "Oui, décocher" : "Oui, retirer", onclick: () => {
           V.confirm = null;
           if (c.kind === "uncheck") patch(v.id, { lots: lots.map(x => x.lot === l.lot ? { ...x, vu: null, revus: [] } : x), historique: hist(v, "vu_annule", l.lot, { ancien: l.vu }) });
@@ -2094,9 +2106,9 @@ function detail(v) {
         el("button", { class: "btn", text: "Annuler", onclick: () => { V.confirm = null; render(); } })))));
     }
   }
-  if (!rows.length) tb.append(el("tr", {}, el("td", { colspan: 8, class: "hint", text: n ? (V.filter === "notes" ? "Aucun lot annoté pour l'instant : utilisez « ✎ Annoter » sur une ligne." : "Aucun lot dans ce filtre.") : "Aucun lot sélectionné. Utilisez « + Ajouter des lots »." })));
+  if (!rows.length) tb.append(el("tr", {}, el("td", { colspan: 9, class: "hint", text: n ? (V.filter === "notes" ? "Aucun lot annoté pour l'instant : utilisez « ✎ Annoter » sur une ligne." : "Aucun lot dans ce filtre.") : "Aucun lot sélectionné. Utilisez « + Ajouter des lots »." })));
   out.push(el("div", { class: "vtable-wrap" }, el("table", { class: "vtable" },
-    el("thead", {}, el("tr", {}, ["Statut", "N° de lot", "Localisation", "Format", "Heure(s) de présentation", "", "Annotation", ""].map(h => el("th", { text: h })))), tb)));
+    el("thead", {}, el("tr", {}, ["Statut", "N° de lot", "Localisation", "Format", "Heure(s) de présentation", "", "Annotation", "Plan", ""].map(h => el("th", { text: h })))), tb)));
 
   // Récapitulatif des lots annotés de la visite
   const annotes = lots.filter(l => l.note);

@@ -1,0 +1,21 @@
+const { chromium } = require('playwright'); const fs = require('fs');
+(async () => {
+  const b = await chromium.launch(); const data = JSON.parse(fs.readFileSync('/tmp/demo.json', 'utf8')); const errs = [];
+  const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
+  await ctx.route('**/*', r => { const u = r.request().url();
+    if (u.includes('firebase-app-compat')) return r.fulfill({ contentType: 'text/javascript', body: fs.readFileSync('tests/fake-firebase.js', 'utf8') });
+    if (u.includes('firebase-firestore-compat')) return r.fulfill({ contentType: 'text/javascript', body: '' });
+    if (u.endsWith('firebase-config.js')) return r.fulfill({ contentType: 'text/javascript', body: 'const FIREBASE_CONFIG = { apiKey: "x", projectId: "test" };' });
+    if (u.startsWith('http://localhost')) return r.continue(); return r.abort(); });
+  const p = await ctx.newPage(); p.on('pageerror', e => errs.push(e.message));
+  await p.goto('http://localhost:8765/importer.html');
+  await p.evaluate(d => { localStorage.clear(); localStorage.setItem('__fakefs', JSON.stringify(d)); localStorage.setItem('jumeau-profil', 'p_a'); localStorage.setItem('jumeau-profil-nom', 'Armand Charrin'); }, data);
+  await p.goto('http://localhost:8765/'); await p.waitForTimeout(900);
+  await p.click('#tabVis'); await p.click('.vchip:has-text("Collections")'); await p.click('.vitem:has-text("Thorell")'); await p.waitForTimeout(300);
+  const lot = (await p.locator('.vtable tbody tr').nth(2).locator('.lotno').textContent()).trim();
+  await p.locator('.vtable tbody tr').nth(2).locator('button.plan-btn').click(); await p.waitForTimeout(700);
+  console.log('lot :', lot, '| plan visible :', await p.locator('.main').isVisible(), '| en rouge :', await p.locator('#plan .rack.match').count(), '| retour :', await p.locator('#retourVisite').isVisible());
+  await p.screenshot({ path: '/tmp/carte.png' });
+  await p.click('#retourVisite'); await p.waitForTimeout(400);
+  console.log('retour à :', await p.textContent('.vhead h2'), errs); await b.close();
+})();
