@@ -1,0 +1,20 @@
+const { chromium } = require('playwright'); const fs = require('fs');
+(async () => {
+  const b = await chromium.launch(); const data = JSON.parse(fs.readFileSync('/tmp/demo.json', 'utf8')); const errs = [];
+  data.visites.a.statut = 'terminee';
+  const ctx = await b.newContext({ viewport: { width: 390, height: 844 } });
+  await ctx.route('**/*', r => { const u = r.request().url();
+    if (u.includes('firebase-app-compat')) return r.fulfill({ contentType: 'text/javascript', body: fs.readFileSync('tests/fake-firebase.js', 'utf8') });
+    if (u.includes('firebase-firestore-compat')) return r.fulfill({ contentType: 'text/javascript', body: '' });
+    if (u.endsWith('firebase-config.js')) return r.fulfill({ contentType: 'text/javascript', body: 'const FIREBASE_CONFIG = { apiKey: "x", projectId: "test" };' });
+    if (u.startsWith('http://localhost')) return r.continue(); return r.abort(); });
+  const p = await ctx.newPage(); p.on('pageerror', e => errs.push(e.message));
+  await p.goto('http://localhost:8765/importer.html');
+  await p.evaluate(d => { localStorage.clear(); localStorage.setItem('__fakefs', JSON.stringify(d)); localStorage.setItem('jumeau-profil', 'p_a'); localStorage.setItem('jumeau-profil-nom', 'Armand Charrin'); }, data);
+  await p.goto('http://localhost:8765/'); await p.waitForTimeout(900);
+  await p.click('#tabVis'); await p.waitForTimeout(300); await p.click('.vente-carte:has-text("Collections")'); await p.waitForTimeout(400);
+  console.log('zones :', await p.locator('.zone-titre, .zone-finis summary').allTextContents(), '| visibles :', await p.locator('.vitem:visible b').allTextContents());
+  await p.screenshot({ path: '/tmp/zones.png', fullPage: true });
+  await p.click('.zone-finis summary'); await p.waitForTimeout(200);
+  console.log('après dépliage :', await p.locator('.zone-finis .vitem:visible').count(), errs); await b.close();
+})();

@@ -349,6 +349,11 @@ h3{margin:0 0 8px;font-family:var(--f-display);font-size:17px;font-weight:600;le
 .recap-v{display:flex;flex-direction:column;gap:6px;padding-bottom:6px}
 .recap-vn{font-size:15px}
 .recap-c{font-weight:600}
+.zone-titre{margin:4px 0 0;font-size:15px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+.zone-finis{border:1px solid var(--line);border-radius:12px;background:var(--surface-2);padding:4px 12px}
+.zone-finis[open]{padding-bottom:12px}
+.zone-finis summary{cursor:pointer;padding:10px 0;font-size:15px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+.zone-finis .vitem{opacity:.85}
 .vtabs{position:sticky;top:0;z-index:8;display:flex;gap:6px;overflow-x:auto;padding:6px;margin:0 -2px;background:var(--bg);border-bottom:1px solid var(--line);scrollbar-width:thin}
 .vtab{flex:none;display:flex;align-items:stretch;border:1.5px solid var(--line);border-radius:10px;background:var(--surface);max-width:220px}
 .vtab.on{border-color:var(--brand);background:var(--brand);color:var(--brand-ink)}
@@ -2078,7 +2083,7 @@ function listView() {
   const vs = tout.filter(filtre).sort((a, b) => vt ? ordreRang(a, b) : -ordreVisite(a, b));
   if (!vs.length) { if (!V.form) out.push(el("p", { class: "hint", text: vt ? "Aucune visite dans cette vente. Créez-en une avec « Nouvelle visite »." : "Toutes les visites sont rangées dans une vente." })); return out; }
   out.push(el("p", { class: "hint", text: "Appui long sur une visite (clic droit sur ordinateur) pour la changer de vente." }));
-  out.push(el("div", { class: "vlist" }, vs.map(v => {
+  const carte = v => {
     const n = (v.lots || []).length, vu = (v.lots || []).filter(l => l.vu).length;
     const open = () => ouvrir(v.id);
     const armed = V.delArm === v.id;
@@ -2098,7 +2103,17 @@ function listView() {
       el("div", { class: "vacts" }, el("button", { class: "btn small", text: vte ? "Changer de vente" : "Ranger…", onclick: e => { e.stopPropagation(); menuRanger(v); } }), el("span", { class: "sp" }), del));
     appuiLong(card, () => menuRanger(V.list.get(v.id) || v));
     return card;
-  })));
+  };
+  // Deux zones : clients en cours (affichés) et clients terminés (repliés, à déplier)
+  const enCours = vs.filter(v => v.statut !== "terminee"), finis = vs.filter(v => v.statut === "terminee");
+  out.push(el("h4", { class: "zone-titre", text: `Clients en cours (${enCours.length})` }));
+  out.push(enCours.length ? el("div", { class: "vlist" }, enCours.map(carte)) : el("p", { class: "hint", text: "Aucun client en cours." }));
+  if (finis.length) {
+    const d = el("details", { class: "zone-finis" }, el("summary", { text: `Clients terminés (${finis.length})` }), el("div", { class: "vlist" }, finis.map(carte)));
+    if (V.finisOuvert) d.open = true;
+    d.addEventListener("toggle", () => { V.finisOuvert = d.open; });
+    out.push(d);
+  }
   return out;
 }
 
