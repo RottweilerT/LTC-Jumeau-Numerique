@@ -310,6 +310,16 @@ h3{margin:0 0 8px;font-family:var(--f-display);font-size:17px;font-weight:600;le
 .vente-nom{font-family:var(--f-display);font-size:24px;line-height:1.1}
 .vente-ligne{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;font-size:14px}
 .vente-choix{display:flex;flex-direction:column;gap:6px;max-height:50vh;overflow:auto}
+.sections-ventes{display:flex;width:100%;max-width:620px;border-radius:10px}
+.sections-ventes button{flex:1;display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:12px 8px;font-size:15px}
+.sections-ventes button[aria-pressed="true"]{background:var(--carton);color:#12223F}
+.sections-ventes .n{font-family:var(--f-mono);font-size:12px;font-weight:500;background:var(--surface-2);color:var(--muted);border-radius:999px;padding:1px 7px}
+.sections-ventes button[aria-pressed="true"] .n{background:rgba(255,255,255,.55);color:#12223F}
+@media (max-width:520px){.sections-ventes button{flex-direction:column;gap:3px;font-size:13px;padding:10px 4px}}
+.sect-titre{margin:4px 0 0;font-family:var(--f-display);font-size:20px;flex:1}
+.vente-carte .vente-ouvrir{font-size:13px;font-weight:600;color:var(--accent);margin-top:2px}
+.btn.retour{align-self:flex-start}
+.btn.sans-vente{align-self:flex-start;margin-top:4px}
 .etat-ligne{flex-basis:100%;display:flex;flex-wrap:wrap;align-items:center;gap:8px}
 .seg.etat-vente button{font-size:15px;padding:8px 14px}
 .seg.etat-vente button[aria-pressed="true"]{background:var(--carton);color:#12223F}
@@ -1626,7 +1636,7 @@ function start() {
   T.db.doc("config/ventes").onSnapshot(s => {
     const l = (s.exists && s.data().liste) || {};
     V.ventes = new Map(Object.entries(l).filter(([, x]) => x && x.nom).map(([id, x]) => [id, { id, ...x }]));
-    if (!["a_ranger", "toutes", "passees", "avenir"].includes(V.venteSel) && !V.ventes.has(V.venteSel)) V.venteSel = "a_ranger";
+    if (V.venteSel && V.venteSel !== "sans_vente" && !V.ventes.has(V.venteSel)) V.venteSel = "";
     render();
   }, () => {});
   T.db.collection("visites").onSnapshot(s => {
@@ -1742,8 +1752,11 @@ function onglets() {
 
 /* ---- Ventes : chaque visite peut être rangée dans une vente ---- */
 V.ventes = new Map();
-V.venteSel = (() => { try { const x = localStorage.getItem("vente-affichee") || "a_ranger"; return x === "plus" ? "a_ranger" : x; } catch (_) { return "a_ranger"; } })();
-const setVenteSel = id => { V.venteSel = id; try { localStorage.setItem("vente-affichee", id); } catch (_) {} };
+// Navigation : 1) section (ventes en cours / à venir / passées) → 2) une vente → 3) ses visites
+V.venteSel = (() => { try { const x = localStorage.getItem("vente-affichee") || ""; return ["plus", "a_ranger", "toutes", "passees", "avenir"].includes(x) ? "" : x; } catch (_) { return ""; } })();
+V.section = (() => { try { const x = localStorage.getItem("ventes-section"); return ["en_cours", "a_venir", "passee"].includes(x) ? x : "en_cours"; } catch (_) { return "en_cours"; } })();
+const setVenteSel = id => { V.venteSel = id || ""; V.form = null; try { localStorage.setItem("vente-affichee", V.venteSel); } catch (_) {} };
+const setSection = k => { V.section = k; setVenteSel(""); try { localStorage.setItem("ventes-section", k); } catch (_) {} };
 // Ventes de la plus proche à la plus lointaine (date croissante) ; celles sans date à la fin
 const ventesTriees = () => [...V.ventes.values()].sort((a, b) => (!a.date) - (!b.date) || String(a.date || "").localeCompare(String(b.date || "")) || String(a.creee || "").localeCompare(String(b.creee || "")));
 const nomClient = v => `${v.prenom || ""} ${v.nom || ""}`.trim() || "Client sans nom";
@@ -1783,10 +1796,11 @@ function rang(v) {
   return l.findIndex(x => x.id === v.id) + 1 || null;
 }
 const ventesDoc = () => T.db.doc("config/ventes");
-async function creerVente(nom, date) {
+async function creerVente(nom, date, etat) {
   const id = "v" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
-  await ventesDoc().set({ liste: { [id]: { nom, date: date || "", creee: new Date().toISOString(), par: T.uid || "" } } }, { merge: true });
-  V.ventes.set(id, { id, nom, date: date || "" });
+  const x = { nom, date: date || "", creee: new Date().toISOString(), par: T.uid || "", ...(etat ? { etat } : {}) };
+  await ventesDoc().set({ liste: { [id]: x } }, { merge: true });
+  V.ventes.set(id, { id, ...x });
   return id;
 }
 async function majVente(id, data) { await ventesDoc().set({ liste: { [id]: data } }, { merge: true }); }
@@ -1818,8 +1832,9 @@ function formVente(close, ok, init = {}) {
     el("label", {}, "Date de la vente", date),
     el("div", { class: "vacts full" }, el("button", { class: "btn primary big", type: "submit", text: init.nom ? "Enregistrer" : "Créer la vente" }), el("button", { class: "btn big", type: "button", text: "Annuler", onclick: close })));
 }
-function nouvelleVente(apres) {
-  modale("Nouvelle vente", close => [formVente(close, async (n, d) => { const id = await creerVente(n, d); toast(`Vente « ${n} » créée`); if (apres) await apres(id); else { setVenteSel(id); render(); } })]);
+function nouvelleVente(apres, etat) {
+  const t = etat === "a_venir" ? "Nouvelle vente à venir" : etat === "passee" ? "Nouvelle vente passée" : etat === "en_cours" ? "Nouvelle vente en cours" : "Nouvelle vente";
+  modale(t, close => [formVente(close, async (n, d) => { const id = await creerVente(n, d, etat); toast(`Vente « ${n} » créée`); if (apres) await apres(id); else { setVenteSel(id); render(); } })]);
 }
 function menuRanger(v) {
   modale(`Ranger la visite de ${nomClient(v)}`, close => {
@@ -1951,51 +1966,59 @@ function render() {
 
 function listView() {
   const out = [];
-  out.push(el("div", { class: "vhead" }, el("h2", { text: "Visites clients" }),
-    el("button", { class: "btn primary big", text: "+ Nouvelle visite", onclick: () => { V.form = { nom: "", prenom: "", date: today(), heure: nowHM(), collab: (window.__profil?.().nom || ""), com: "", vente: V.ventes.has(V.venteSel) ? V.venteSel : "", type: "collection", prefixe: "40", lots: { text: "" } }; render(); setTimeout(() => $("#vf-nom")?.focus(), 0); } })));
-  if (!T.db) { out.push(el("p", { class: "hint", text: "La base Firebase n'est pas disponible : les visites ne peuvent pas être enregistrées." })); return out; }
-  if (V.form) out.push(newForm());
-  if (!V.loaded) { out.push(el("p", { class: "hint", text: "Chargement des visites…" })); return out; }
+  if (!T.db) { out.push(el("h2", { text: "Visites clients" }), el("p", { class: "hint", text: "La base Firebase n'est pas disponible : les visites ne peuvent pas être enregistrées." })); return out; }
+  if (!V.loaded) { out.push(el("h2", { text: "Visites clients" }), el("p", { class: "hint", text: "Chargement des visites…" })); return out; }
   const tout = [...V.list.values()];
-  const passees = ventesPassees(), idsPasses = new Set(passees.map(x => x.id));
-  const avenir = ventesAVenir(), idsAVenir = new Set(avenir.map(x => x.id));
-  const nb = id => id === "toutes" ? tout.length : id === "a_ranger" ? tout.filter(v => !v.vente || !V.ventes.has(v.vente)).length : id === "passees" ? tout.filter(v => idsPasses.has(v.vente)).length : id === "avenir" ? tout.filter(v => idsAVenir.has(v.vente)).length : tout.filter(v => v.vente === id).length;
-  const dansPassees = V.venteSel === "passees" || idsPasses.has(V.venteSel);
-  const dansAVenir = V.venteSel === "avenir" || idsAVenir.has(V.venteSel);
-  const chip = (id, lab, on, title) => el("button", { class: "vchip" + ((on ?? V.venteSel === id) ? " on" : ""), "aria-pressed": String(on ?? V.venteSel === id), title: title || null, onclick: () => { setVenteSel(id); render(); } },
-    el("span", { text: lab }), el("span", { class: "n", text: String(nb(id)) }));
-  // Puce d'une vente : appui long ou clic droit → la ranger dans en cours / à venir / passées
-  const chipVente = (x, lab) => { const c = chip(x.id, lab || x.nom, undefined, "Appui long ou clic droit : ranger cette vente"); appuiLong(c, () => menuVente(V.ventes.get(x.id) || x)); return c; };
-  // Barre : les ventes en cours directement, puis les groupes « À venir » et « Ventes passées »
-  out.push(el("div", { class: "vventes", role: "group", "aria-label": "Ventes" },
-    ventesEnCours().map(x => chipVente(x)),
-    chip("a_ranger", "À ranger"),
-    avenir.length ? chip("avenir", "À venir", dansAVenir, "Ventes à venir") : null,
-    passees.length ? chip("passees", "Ventes passées", dansPassees, "Ventes passées") : null, chip("toutes", "Toutes"),
-    el("button", { class: "vchip add", text: "+ Nouvelle vente", onclick: () => nouvelleVente() })));
-  if (dansAVenir) out.push(el("div", { class: "vventes sous", role: "group", "aria-label": "Ventes à venir" },
-    avenir.map(x => chipVente(x, x.nom + (x.date ? " · " + fDate(x.date) : "")))));
-  if (dansPassees) out.push(el("div", { class: "vventes sous", role: "group", "aria-label": "Ventes passées" },
-    passees.map(x => chipVente(x, x.nom + (x.date ? " · " + fDate(x.date) : "")))));
+  const nbV = id => tout.filter(v => v.vente === id).length;
+  const sansVente = tout.filter(v => !v.vente || !V.ventes.has(v.vente));
   const vt = V.ventes.get(V.venteSel);
+  if (vt) V.section = etatVente(vt);
+  const SECT = { en_cours: ["Ventes en cours", ventesEnCours], a_venir: ["Ventes à venir", ventesAVenir], passee: ["Ventes passées", ventesPassees] };
+  // 1) Choix de la section
+  out.push(el("h2", { text: "Visites clients" }));
+  out.push(el("div", { class: "seg sections-ventes", role: "tablist", "aria-label": "Ventes" },
+    Object.entries(SECT).map(([k, [lab, f]]) => el("button", { type: "button", role: "tab", "aria-pressed": String(V.section === k && V.venteSel !== "sans_vente"), onclick: () => { setSection(k); render(); } },
+      el("span", { text: lab }), el("span", { class: "n", text: String(f().length) })))));
+  // 2) Liste des ventes de la section
+  if (!V.venteSel) {
+    const [lab, f] = SECT[V.section], lst = f();
+    out.push(el("div", { class: "vhead" }, el("h3", { class: "sect-titre", text: lab }),
+      el("button", { class: "btn primary big", text: "+ Nouvelle vente", onclick: () => nouvelleVente(null, V.section) })));
+    if (!lst.length) out.push(el("p", { class: "hint", text: V.section === "en_cours" ? "Aucune vente en cours. Créez-en une avec « Nouvelle vente »." : V.section === "a_venir" ? "Aucune vente à venir." : "Aucune vente passée." }));
+    else out.push(el("div", { class: "vlist" }, lst.map(x => {
+      const c = el("div", { class: "vitem vente-carte", role: "button", tabindex: 0, title: "Appui long ou clic droit : ranger cette vente", onclick: () => { setVenteSel(x.id); render(); window.scrollTo(0, 0); }, onkeydown: e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setVenteSel(x.id); render(); } } },
+        el("b", { class: "vente-nom", text: x.nom }),
+        el("div", { class: "vmeta", text: (x.date ? "le " + fDate(x.date) + " · " : "") + `${nbV(x.id)} visite${nbV(x.id) > 1 ? "s" : ""}` }),
+        el("span", { class: "vente-ouvrir", text: "Ouvrir la vente →" }));
+      appuiLong(c, () => menuVente(V.ventes.get(x.id) || x)); return c;
+    })));
+    if (sansVente.length) out.push(el("button", { class: "btn small sans-vente", text: `Visites sans vente (${sansVente.length})`, onclick: () => { setVenteSel("sans_vente"); render(); } }));
+    return out;
+  }
+  // 3) Dans une vente : ses visites
+  const [labS] = SECT[V.section];
+  out.push(el("button", { class: "btn retour", text: "← " + (V.venteSel === "sans_vente" ? "Retour aux ventes" : labS), onclick: () => { setVenteSel(""); render(); } }));
   if (vt) {
     const armedV = V.delVente === vt.id;
     out.push(el("div", { class: "vcard vente-tete" },
-      el("div", {}, el("div", { class: "eyebrow", text: libEtat[etatVente(vt)] }), el("b", { class: "vente-nom", text: vt.nom }), el("div", { class: "vmeta", text: (vt.date ? "le " + fDate(vt.date) + " · " : "") + `${nb(vt.id)} visite${nb(vt.id) > 1 ? "s" : ""}` })),
+      el("div", {}, el("div", { class: "eyebrow", text: libEtat[etatVente(vt)] }), el("b", { class: "vente-nom", text: vt.nom }), el("div", { class: "vmeta", text: (vt.date ? "le " + fDate(vt.date) + " · " : "") + `${nbV(vt.id)} visite${nbV(vt.id) > 1 ? "s" : ""}` })),
       el("div", { class: "vacts" },
         el("button", { class: "btn small", text: "Lots annotés", onclick: () => recapVente(vt.nom, tout.filter(v => v.vente === vt.id)) }),
         el("button", { class: "btn small", text: "Renommer", onclick: () => modale("Modifier la vente", close => [formVente(close, async (n, d) => majVente(vt.id, { nom: n, date: d }), vt)]) }),
-        el("button", { class: "btn small danger" + (armedV ? " armed" : ""), text: armedV ? "Confirmer : supprimer la vente" : "Supprimer la vente", title: "Les visites ne sont pas supprimées : elles retournent dans « À ranger ».", onclick: async () => {
+        el("button", { class: "btn small danger" + (armedV ? " armed" : ""), text: armedV ? "Confirmer : supprimer la vente" : "Supprimer la vente", title: "Les visites ne sont pas supprimées : elles vont dans « Visites sans vente ».", onclick: async () => {
           if (!armedV) { V.delVente = vt.id; render(); setTimeout(() => { if (V.delVente === vt.id) { V.delVente = null; render(); } }, 6000); return; }
           V.delVente = null;
-          try { await supprimerVente(vt.id); setVenteSel("a_ranger"); toast("Vente supprimée : ses visites sont dans « À ranger »."); render(); } catch (_) { toast("Suppression impossible. Vérifiez la connexion.", true); }
+          try { await supprimerVente(vt.id); setVenteSel(""); toast("Vente supprimée : ses visites sont dans « Visites sans vente »."); render(); } catch (_) { toast("Suppression impossible. Vérifiez la connexion.", true); }
         } })),
       el("div", { class: "etat-ligne" }, el("span", { class: "vmeta", text: "Ranger dans :" }), choixEtat(vt))));
-  }
-  const filtre = v => V.venteSel === "toutes" ? true : V.venteSel === "a_ranger" ? (!v.vente || !V.ventes.has(v.vente)) : V.venteSel === "passees" ? idsPasses.has(v.vente) : V.venteSel === "avenir" ? idsAVenir.has(v.vente) : v.vente === V.venteSel;
+    out.push(el("div", { class: "vhead" }, el("h3", { class: "sect-titre", text: "Visites" }),
+      el("button", { class: "btn primary big", text: "+ Nouvelle visite", onclick: () => { V.form = { nom: "", prenom: "", date: today(), heure: nowHM(), collab: (window.__profil?.().nom || ""), com: "", vente: vt.id, type: "collection", prefixe: "40", lots: { text: "" } }; render(); setTimeout(() => $("#vf-nom")?.focus(), 0); } })));
+    if (V.form) out.push(newForm());
+  } else out.push(el("div", { class: "vhead" }, el("h3", { class: "sect-titre", text: "Visites sans vente" })), el("p", { class: "hint", text: "Visites créées avant les ventes ou dont la vente a été supprimée. Utilisez « Ranger… » pour les mettre dans une vente." }));
+  const filtre = v => vt ? v.vente === vt.id : (!v.vente || !V.ventes.has(v.vente));
   const vs = tout.filter(filtre).sort((a, b) => vt ? ordreRang(a, b) : -ordreVisite(a, b));
-  if (!vs.length) { out.push(el("p", { class: "hint", text: !tout.length ? "Aucune visite enregistrée. Créez la première avec « Nouvelle visite »." : V.venteSel === "a_ranger" ? "Toutes les visites sont rangées dans une vente." : "Aucune visite dans cette vente. Appuyez longtemps sur une visite (ou clic droit) pour la ranger ici." })); return out; }
-  out.push(el("p", { class: "hint", text: "Appui long sur une visite (clic droit sur ordinateur) pour la ranger dans une vente." }));
+  if (!vs.length) { if (!V.form) out.push(el("p", { class: "hint", text: vt ? "Aucune visite dans cette vente. Créez-en une avec « Nouvelle visite »." : "Toutes les visites sont rangées dans une vente." })); return out; }
+  out.push(el("p", { class: "hint", text: "Appui long sur une visite (clic droit sur ordinateur) pour la changer de vente." }));
   out.push(el("div", { class: "vlist" }, vs.map(v => {
     const n = (v.lots || []).length, vu = (v.lots || []).filter(l => l.vu).length;
     const open = () => ouvrir(v.id);
@@ -2012,7 +2035,6 @@ function listView() {
       el("div", {}, el("span", { class: "chip-s " + (v.statut === "terminee" ? "done" : "live"), text: v.statut === "terminee" ? "Terminée" : "En cours" }), V.open.includes(v.id) ? el("span", { class: "chip-s open", text: "Onglet ouvert" }) : null),
       el("b", {}, rk ? el("span", { class: "rang", text: "N° " + rk }) : null, nomClient(v)),
       el("div", { class: "vmeta", text: `${fDate(v.date)} à ${v.heure || "—"}${v.collab ? " · avec " + v.collab : ""}` }),
-      (V.venteSel === "toutes" || !vt) && vte ? el("div", { class: "vmeta", text: "Vente : " + vte.nom }) : null,
       el("div", { class: "vmeta", text: `${vu} lot${vu > 1 ? "s" : ""} présenté${vu > 1 ? "s" : ""} sur ${n}` }),
       el("div", { class: "vacts" }, el("button", { class: "btn small", text: vte ? "Changer de vente" : "Ranger…", onclick: e => { e.stopPropagation(); menuRanger(v); } }), el("span", { class: "sp" }), del));
     appuiLong(card, () => menuRanger(V.list.get(v.id) || v));
