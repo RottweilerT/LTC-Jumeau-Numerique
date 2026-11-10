@@ -2117,6 +2117,9 @@ function appuiLong(node, action) {
   node.addEventListener("click", e => { if (node.dataset.long) { e.stopImmediatePropagation(); e.preventDefault(); delete node.dataset.long; } }, true);
 }
 
+// Ordre des numéros de la vente : tri naturel (40321 avant 40321A, 40999 avant 41000)
+const ordreLot = (a, b) => String(a.lot ?? a).localeCompare(String(b.lot ?? b), "fr", { numeric: true, sensitivity: "base" });
+
 /* ---- Journées de visite : chaque jour où des lots ont été présentés ---- */
 const jourDe = iso => new Date(iso).toLocaleDateString("sv-SE");
 const jourLong = j => { const s = new Date(j + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" }); return s[0].toUpperCase() + s.slice(1); };
@@ -2183,7 +2186,7 @@ function recapLigne(l, e, client) {
 async function exportNotes(vs, nom) {
   const cat = catalog(), q = s => '"' + String(s ?? "").replace(/"/g, '""') + '"';
   const lignes = [["Client", "Date de visite", "N° de lot", "Réf.", "Annotation", "Vu à", "Revu (nombre)", "Heures des passages"].map(q).join(";")];
-  for (const v of vs) for (const l of (v.lots || []).filter(l => l.note)) {
+  for (const v of vs) for (const l of (v.lots || []).filter(l => l.note).sort(ordreLot)) {
     const e = info(cat, l.lot);
     lignes.push([nomClient(v), fDate(v.date), l.lot, e.idlot || "", l.note, l.vu ? fT(l.vu) : "", (l.revus || []).length, [l.vu, ...(l.revus || [])].filter(Boolean).map(fT).join(" / ")].map(q).join(";"));
   }
@@ -2197,7 +2200,7 @@ function recapVente(titre, vs) {
   modale(`Lots annotés · ${titre}`, close => [
     el("span", { class: "vmeta", text: n ? `${n} annotation${n > 1 ? "s" : ""} dans ${avec.length} visite${avec.length > 1 ? "s" : ""}` : "Aucune annotation dans ces visites." }),
     el("div", { class: "recap-notes", style: "max-height:60vh;overflow:auto" }, avec.map(v => el("div", { class: "recap-v" }, el("b", { class: "recap-vn", text: (rang(v) ? "N° " + rang(v) + " · " : "") + nomClient(v) + " · " + fDate(v.date) }),
-      v.lots.filter(l => l.note).map(l => recapLigne(l, info(cat, l.lot)))))),
+      v.lots.filter(l => l.note).sort(ordreLot).map(l => recapLigne(l, info(cat, l.lot)))))),
     el("div", { class: "vacts" }, n ? el("button", { class: "btn primary", text: "Télécharger (Excel/CSV)", onclick: () => exportNotes(avec, `Annotations_${titre.replace(/[^\w\-]+/g, "_")}.csv`) }) : null, el("span", { class: "sp" }), el("button", { class: "btn", text: "Fermer", onclick: close }))]);
 }
 
@@ -2370,7 +2373,8 @@ function detail(v) {
   if (V.adding && !V.addBas) out.push(addBox(v, cat));
 
   // Tableau
-  const rows = lots.filter(l => V.filter === "tous" || (V.filter === "notes" ? !!l.note : V.filter === "vus" ? l.vu : !l.vu));
+  // Lots rangés dans l'ordre des numéros de la vente (40066, 40067… 40321, 40321A…)
+  const rows = lots.filter(l => V.filter === "tous" || (V.filter === "notes" ? !!l.note : V.filter === "vus" ? l.vu : !l.vu)).sort(ordreLot);
   const majLot = (lot, f) => lots.map(x => x.lot === lot ? f(x) : x);
   const tb = el("tbody");
   for (const l of rows) {
@@ -2436,7 +2440,7 @@ function detail(v) {
   if (V.adding && V.addBas) out.push(addBox(v, cat));
 
   // Récapitulatif des lots annotés de la visite
-  const annotes = lots.filter(l => l.note);
+  const annotes = lots.filter(l => l.note).sort(ordreLot);
   out.push(el("div", { class: "vcard" },
     el("div", { class: "vacts" }, el("div", { class: "eyebrow", text: `Lots annotés (${annotes.length})` }), el("span", { class: "sp" }),
       annotes.length ? el("button", { class: "btn small", text: "Télécharger (Excel/CSV)", onclick: () => exportNotes([v], `Annotations_${(v.nom || "client").replace(/[^\w\-]+/g, "_")}_${v.date || today()}.csv`) }) : null),
@@ -2624,7 +2628,7 @@ function sigPad(v, key, lab) {
 async function exportPdf(v, jour, numJour, nbJours) {
   if (!window.jspdf || !window.jspdf.jsPDF) { toast("Le module PDF n'a pas pu se charger. Rechargez la page.", true); return; }
   const cat = catalog();
-  const seen = jour ? lotsDuJour(v, jour).map(l => ({ ...l, vu: l.tJour })) : (v.lots || []).filter(l => l.vu).sort((a, b) => String(a.vu).localeCompare(String(b.vu)));
+  const seen = (jour ? lotsDuJour(v, jour).map(l => ({ ...l, vu: l.tJour })) : (v.lots || []).filter(l => l.vu)).sort(ordreLot);
   const client = `${v.prenom || ""} ${v.nom || ""}`.trim();
   const doc = new window.jspdf.jsPDF({ unit: "mm", format: "a4" });
   const W = 210, M = 12;
