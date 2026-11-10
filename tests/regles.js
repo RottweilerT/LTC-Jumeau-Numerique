@@ -14,6 +14,6 @@ const { chromium } = require('playwright'); const fs = require('fs');
   await p.evaluate(d => { localStorage.clear(); localStorage.setItem('__fakefs', JSON.stringify(d)); localStorage.setItem('jumeau-profil', 'p_a'); localStorage.setItem('jumeau-profil-nom', 'Armand Charrin'); }, data);
   await p.goto('http://localhost:8765/'); await p.waitForTimeout(900); await p.click('#tabVis'); await p.waitForTimeout(300);
   for (const s of ['en cours', 'à venir', 'passées']) { await p.click(`.sections-ventes button:has-text("${s}")`); await p.waitForTimeout(200); console.log(s, ':', await p.locator('.vente-carte .vente-nom').allTextContents()); }
-  await p.click('.sections-ventes button:has-text("à venir")'); await p.click('.vente-carte:has-text("3 mois")'); await p.waitForTimeout(300);
+  await p.click('.sections-ventes button:has-text("en cours")'); await p.click('.vente-carte:has-text("1 mois")'); await p.waitForTimeout(300);
   console.log('règle :', await p.textContent('.regle-etat'), errs); await b.close();
 })();
