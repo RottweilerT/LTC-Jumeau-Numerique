@@ -470,6 +470,8 @@ h3{margin:0 0 8px;font-family:var(--f-display);font-size:17px;font-weight:600;le
 .vtable .sub{font-size:12px;color:var(--muted);font-family:var(--f-mono)}
 .vtable .time{font-family:var(--f-mono);font-variant-numeric:tabular-nums;white-space:nowrap}
 .ck{appearance:none;-webkit-appearance:none;width:38px;height:38px;border:2.5px solid var(--muted);border-radius:8px;background:var(--surface);cursor:pointer;display:grid;place-items:center;margin:0}
+.ck.arme{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 22%,var(--surface));box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 30%,transparent)}
+.ck.arme::after{content:"?";font-weight:700;font-size:20px;color:var(--accent)}
 .ck:checked{background:var(--ok);border-color:var(--ok)}
 .ck:checked::after{content:"";width:12px;height:20px;border:solid #fff;border-width:0 4px 4px 0;transform:rotate(45deg) translate(-2px,-2px)}
 .ck:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
@@ -2466,8 +2468,18 @@ function detail(v) {
   for (const l of rows) {
     const e = info(cat, l.lot), seen = !!l.vu;
     const ck = el("input", { type: "checkbox", class: "ck", "aria-label": "Lot " + l.lot + " présenté", checked: seen });
+    // Double touche pour valider « vu » : la 1re touche arme la case (3 s), la 2e valide — évite les touches malheureuses
+    if (V.arme && V.arme.lot === l.lot && V.arme.v === v.id && Date.now() - V.arme.t < 3000) ck.classList.add("arme");
     ck.addEventListener("change", () => {
+      if (ck.checked && !(V.arme && V.arme.lot === l.lot && V.arme.v === v.id && Date.now() - V.arme.t < 3000)) {
+        ck.checked = false; ck.classList.add("arme");
+        V.arme = { lot: l.lot, v: v.id, t: Date.now() };
+        toast(`Touchez encore la case pour valider le lot ${l.lot}`);
+        clearTimeout(V.armeT); V.armeT = setTimeout(() => { V.arme = null; document.querySelectorAll(".ck.arme").forEach(c => c.classList.remove("arme")); }, 3000);
+        return;
+      }
       if (ck.checked) {
+        V.arme = null; clearTimeout(V.armeT);
         const t = new Date().toISOString(); // heure réelle du clic
         patch(v.id, { lots: lots.map(x => x.lot === l.lot ? { ...x, vu: t } : x), historique: hist(v, "vu", l.lot, { heure: t }) });
         if (V.filter === "apresenter") toast(`Lot ${l.lot} vu à ${fT(t)} · il passe dans « Lots déjà vus »`);
