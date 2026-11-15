@@ -32,5 +32,8 @@ jobs:
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site
+      # Petite attente : GitHub met parfois quelques secondes à rendre l'archive visible
+      - name: Attendre l'archive
+        run: sleep 30
       - id: deploiement
         uses: actions/deploy-pages@v4
