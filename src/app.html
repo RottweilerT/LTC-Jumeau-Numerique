@@ -2274,7 +2274,7 @@ function detail(v) {
   const lt = lots.filter(dansTaille), vuT = lt.filter(l => l.vu).length;
   const fb = (k, lab) => el("button", { "aria-pressed": String(V.filter === k), text: lab, onclick: () => { V.filter = k; render(); } });
   const tb_ = (k, lab) => el("button", { "aria-pressed": String(V.taille === k), text: lab, onclick: () => { V.taille = k; render(); } });
-  out.push(el("div", { class: "filters taille" }, tb_("toutes", `Toutes tailles (${n})`), tb_("gros", `Gros lots · B6 et + (${nGros})`), tb_("petits", `Petits lots (${n - nGros})`)));
+  out.push(el("div", { class: "filters taille" }, tb_("toutes", `Toutes tailles (${n})`), tb_("gros", `Gros lots (${nGros})`), tb_("petits", `Petits lots (${n - nGros})`)));
   out.push(el("div", { class: "vacts" },
     el("div", { class: "filters" }, fb("tous", `Tous les lots (${lt.length})`), fb("apresenter", `Lots à présenter (${lt.length - vuT})`), fb("vus", `Lots déjà vus (${vuT})`), fb("notes", `Lots annotés (${lt.filter(l => l.note).length})`)),
     el("span", { class: "sp" }),
