@@ -259,6 +259,8 @@ h3{margin:0 0 8px;font-family:var(--f-display);font-size:17px;font-weight:600;le
 .bar-o{height:12px;border-radius:6px;background:var(--surface-2);overflow:hidden}
 .bar-i{height:100%;background:var(--ok);border-radius:6px;transition:width .3s}
 .filters{display:flex;flex-wrap:wrap;gap:6px}
+.filters .fmt-plus{min-width:48px;font-weight:700;letter-spacing:.05em}
+.fmt-menu{padding:8px;border:1px dashed var(--line);border-radius:12px;background:var(--surface-2)}
 .filters.taille button[aria-pressed="true"]{background:var(--carton);color:#12223F;border-color:var(--carton)}
 .filters button{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:8px 14px;font-size:14px;cursor:pointer}
 .filters button[aria-pressed="true"]{background:var(--ink);border-color:var(--ink);color:var(--bg)}
@@ -1800,7 +1802,7 @@ V.open = (() => { try { return JSON.parse(localStorage.getItem("visites-ouvertes
 V.etat = {};
 const saveOpen = () => { try { localStorage.setItem("visites-ouvertes", JSON.stringify(V.open)); } catch (_) {} };
 const vRoot = () => $("#visits");
-function memoriser() { if (V.cur) V.etat[V.cur] = { filter: V.filter, taille: V.taille, y: window.scrollY, ry: vRoot().scrollTop }; }
+function memoriser() { if (V.cur) V.etat[V.cur] = { filter: V.filter, taille: V.taille, fmtMenu: V.fmtMenu, y: window.scrollY, ry: vRoot().scrollTop }; }
 function ouvrir(id) {
   if (!V.open.includes(id)) {
     if (V.open.length >= MAX_OUVERTES) { toast(`${MAX_OUVERTES} visites sont déjà ouvertes : fermez-en une (×) pour en ouvrir une autre.`, true); return false; }
@@ -1808,7 +1810,7 @@ function ouvrir(id) {
   }
   memoriser();
   const e = V.etat[id] || {};
-  V.cur = id; V.filter = e.filter || "apresenter"; V.taille = e.taille || "toutes"; V.adding = false; V.confirm = null; V.delArm = null; V.addSel = new Set(); V.addQ = ""; V.addTxt = { text: "" };
+  V.cur = id; V.filter = e.filter || "apresenter"; V.taille = e.taille || "toutes"; V.fmtMenu = !!e.fmtMenu; V.adding = false; V.confirm = null; V.delArm = null; V.addSel = new Set(); V.addQ = ""; V.addTxt = { text: "" };
   render();
   requestAnimationFrame(() => { vRoot().scrollTop = e.ry || 0; window.scrollTo(0, e.y || 0); });
   return true;
@@ -2270,11 +2272,22 @@ function detail(v) {
   // Taille : gros lots = B6 et au-dessus (B6, B7… B15) ; tout le reste (B5 et moins, autres formats) = petits lots
   const gros = l => { const m = /^B\s*(\d+)/i.exec(info(cat, l.lot).unite || ""); return !!m && +m[1] >= 6; };
   const nGros = lots.filter(gros).length;
-  const dansTaille = l => V.taille === "toutes" || (V.taille === "gros" ? gros(l) : !gros(l));
+  // Formats présents dans la visite (menu « ⋯ ») : B5, B6… B15, A, etc. ; « sans format » si inconnu
+  const fmtDe = l => (info(cat, l.lot).unite || "").trim().toUpperCase() || "?";
+  const formats = new Map(); for (const l of lots) { const f = fmtDe(l); formats.set(f, (formats.get(f) || 0) + 1); }
+  const fmtsTri = [...formats.keys()].sort((a, b) => a === "?" ? 1 : b === "?" ? -1 : a.localeCompare(b, "fr", { numeric: true }));
+  if (V.taille.startsWith("fmt:") && !formats.has(V.taille.slice(4))) V.taille = "toutes";
+  const fmtSel = V.taille.startsWith("fmt:") ? V.taille.slice(4) : null;
+  const dansTaille = l => V.taille === "toutes" || (fmtSel ? fmtDe(l) === fmtSel : V.taille === "gros" ? gros(l) : !gros(l));
   const lt = lots.filter(dansTaille), vuT = lt.filter(l => l.vu).length;
   const fb = (k, lab) => el("button", { "aria-pressed": String(V.filter === k), text: lab, onclick: () => { V.filter = k; render(); } });
-  const tb_ = (k, lab) => el("button", { "aria-pressed": String(V.taille === k), text: lab, onclick: () => { V.taille = k; render(); } });
-  out.push(el("div", { class: "filters taille" }, tb_("toutes", `Toutes tailles (${n})`), tb_("gros", `Gros lots (${nGros})`), tb_("petits", `Petits lots (${n - nGros})`)));
+  const tb_ = (k, lab) => el("button", { "aria-pressed": String(V.taille === k), text: lab, onclick: () => { V.taille = k; V.fmtMenu = false; render(); } });
+  const nomFmt = f => f === "?" ? "Sans format" : f;
+  out.push(el("div", { class: "filters taille" }, tb_("toutes", `Toutes tailles (${n})`), tb_("gros", `Gros lots (${nGros})`), tb_("petits", `Petits lots (${n - nGros})`),
+    el("button", { class: "fmt-plus", "aria-pressed": String(!!fmtSel), "aria-expanded": String(!!V.fmtMenu), title: "Filtrer par format", "aria-label": "Filtrer par format",
+      text: fmtSel ? `⋯ ${nomFmt(fmtSel)} (${formats.get(fmtSel)})` : "⋯", onclick: () => { V.fmtMenu = !V.fmtMenu; render(); } })));
+  if (V.fmtMenu) out.push(el("div", { class: "filters taille fmt-menu" },
+    fmtsTri.length ? fmtsTri.map(f => tb_("fmt:" + f, `${nomFmt(f)} (${formats.get(f)})`)) : el("span", { class: "hint", text: "Aucun lot dans cette visite." })));
   out.push(el("div", { class: "vacts" },
     el("div", { class: "filters" }, fb("tous", `Tous les lots (${lt.length})`), fb("apresenter", `Lots à présenter (${lt.length - vuT})`), fb("vus", `Lots déjà vus (${vuT})`), fb("notes", `Lots annotés (${lt.filter(l => l.note).length})`)),
     el("span", { class: "sp" }),
