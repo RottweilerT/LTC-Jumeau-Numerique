@@ -1,6 +1,6 @@
 // Faux Firebase (API « compat ») pour les tests : données gardées dans localStorage.
 (function () {
-  const KEY = '__fakefs', load = () => JSON.parse(localStorage.getItem(KEY) || '{}'), save = s => localStorage.setItem(KEY, JSON.stringify(s));
+  const KEY = '__fakefs'; let mem = null, lot = 0; const load = () => mem || (mem = JSON.parse(localStorage.getItem(KEY) || '{}')), save = s => { mem = s; if (!lot) localStorage.setItem(KEY, JSON.stringify(s)); };
   const L = new Set(), notify = () => setTimeout(() => L.forEach(l => l()), 0), clone = o => JSON.parse(JSON.stringify(o));
   let n = 0; const nid = () => 'id' + (++n) + Math.random().toString(36).slice(2, 6);
   function deep(a, b) { const o = clone(a); for (const [k, v] of Object.entries(b)) { if (v && v.__del) delete o[k]; else if (v && typeof v === 'object' && !Array.isArray(v) && o[k] && typeof o[k] === 'object') o[k] = deep(o[k], v); else o[k] = v; } return o; }
@@ -20,6 +20,6 @@
   function run(c) { const docs = Object.keys(load()[c] || {}).map(id => snap(c, id)); return { docs, size: docs.length }; }
   const db = { settings() {}, enablePersistence: async () => {}, collection: col,
     doc: p => { const [c, id] = p.split('/'); return doc(c, id); },
-    batch() { const ops = []; return { set(r, d) { ops.push(() => r.set(d)); }, delete(r) { ops.push(() => r.delete()); }, commit: async () => { for (const o of ops) await o(); } }; } };
+    batch() { const ops = []; return { set(r, d) { ops.push(() => r.set(d)); }, delete(r) { ops.push(() => r.delete()); }, commit: async () => { lot++; try { for (const o of ops) await o(); } finally { lot--; save(load()); } } }; } };
   window.firebase = { initializeApp() {}, firestore: Object.assign(() => db, { FieldValue: { delete: () => ({ __del: true }) } }) };
 })();
