@@ -51,10 +51,13 @@ async function preparerRangement(j) {
   const n = Math.max(1, r.niveaux | 0), haut = Math.max(...j.items.map(x => x.etageDepuisLeHaut || 0));
   if (haut >= n) throw new Error(`Le ${j.type || "coffre"} ${j.code} n'a que ${n} étage(s) : il en faut au moins ${haut + 1}.`);
   const t = new Date().toISOString(), docs = {};
-  j.items.forEach((x, k) => { const { etageDepuisLeHaut, ...d } = x; docs[`rg-${r.id}-${j.cle}-${k + 1}`] = { ...d, rackId: r.id, niveau: n - (etageDepuisLeHaut || 0), maj: t, majPar: null }; });
-  data = { collections: { items: docs } };
-  const lignes = Object.values(docs).map(d => `<tr><td>${d.nom}</td><td>étage ${d.niveau}</td></tr>`).join("");
-  $("#res").innerHTML = `<b>${j.titre || "Rangement"}</b> : ${j.items.length} caisses dans le ${j.type || "coffre"} ${j.code} (${n} étages, l'étage ${n} est en haut).<table>${lignes}</table>Si vous importez deux fois ce fichier, les caisses sont remplacées, pas dupliquées.`;
+  j.items.forEach((x, k) => { const { etageDepuisLeHaut, cle, ...d } = x; docs[`rg-${r.id}-${j.cle}-${cle ?? k + 1}`] = { ...d, rackId: r.id, niveau: n - (etageDepuisLeHaut || 0), maj: t, majPar: null }; });
+  // Anciennes fiches du même rangement (ex. une 1re version par caisses) : retirées pour éviter les doublons
+  const prefixe = `rg-${r.id}-${j.cle}-`, anciens = (await db.collection("items").get()).docs.map(d => d.id).filter(id => id.startsWith(prefixe) && !docs[id]);
+  data = { collections: { items: docs }, supprimer: anciens.map(id => ["items", id]) };
+  const resume = j.resume ? j.resume.map(x => ({ ...x, niveau: n - (x.etageDepuisLeHaut || 0) })) : Object.values(docs);
+  const lignes = resume.map(d => `<tr><td>${d.nom}</td><td>étage ${d.niveau}</td></tr>`).join("");
+  $("#res").innerHTML = `<b>${j.titre || "Rangement"}</b> : ${j.items.length} fiche${j.items.length > 1 ? "s" : ""} dans le ${j.type || "coffre"} ${j.code} (${n} étages, l'étage ${n} est en haut).<table>${lignes}</table>${anciens.length ? `${anciens.length} ancienne${anciens.length > 1 ? "s" : ""} fiche${anciens.length > 1 ? "s" : ""} de ce rangement ser${anciens.length > 1 ? "ont" : "a"} retirée${anciens.length > 1 ? "s" : ""}. ` : ""}Si vous importez deux fois ce fichier, les fiches sont remplacées, pas dupliquées.`;
   $("#go").disabled = false;
 }
 $("#go").addEventListener("click", async () => {
@@ -62,10 +65,11 @@ $("#go").addEventListener("click", async () => {
   $("#go").disabled = true;
   const ops = [];
   for (const [c, docs] of Object.entries(data.collections)) for (const [id, d] of Object.entries(docs)) if (!(c === "racks" && (d.type === "chien" || d.type === "lapin"))) ops.push([c, id, d]);
+  for (const [c, id] of data.supprimer || []) ops.push([c, id, null]);
   try {
     for (let i = 0; i < ops.length; i += 400) {
       const b = db.batch();
-      ops.slice(i, i + 400).forEach(([c, id, d]) => b.set(db.collection(c).doc(id), d));
+      ops.slice(i, i + 400).forEach(([c, id, d]) => d ? b.set(db.collection(c).doc(id), d) : b.delete(db.collection(c).doc(id)));
       $("#msg").textContent = `Envoi… ${Math.min(i + 400, ops.length)} / ${ops.length}`;
       await b.commit();
     }
