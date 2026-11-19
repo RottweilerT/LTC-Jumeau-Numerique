@@ -800,7 +800,9 @@ function occClass(r) {
   const f = used / n;
   return f < .34 ? 1 : f < .67 ? 2 : 3;
 }
-function itemHit(it, q) { return norm(it.nom).includes(q) || norm(it.ref).includes(q) || norm(it.note).includes(q); }
+// Un article peut couvrir une plage de lots (ex. caisse 50000 → 50312) : chercher 50123 le trouve
+const dansPlage = (it, q) => it.lotDe != null && it.lotA != null && /^\d{4,6}$/.test(q) && +q >= +it.lotDe && +q <= +it.lotA;
+function itemHit(it, q) { return norm(it.nom).includes(q) || norm(it.ref).includes(q) || norm(it.note).includes(q) || dansPlage(it, q); }
 function searchResults() {
   const q = norm(S.q.trim()); if (!q) return { items: [], racks: new Set() };
   const items = [...S.items.values()].filter(i => itemHit(i, q) && S.racks.has(i.rackId));
@@ -1475,8 +1477,8 @@ function levelRow(r, L, list, q) {
 }
 function openForm(r, it, L) {
   S.armed = null;
-  S.form = it ? { id: it.id, rackId: r.id, nom: it.nom || "", ref: it.ref || "", qte: it.qte ?? 1, unite: it.unite || "", niveau: Math.min(Math.max(1, it.niveau), Math.max(1, r.niveaux | 0)), note: it.note || "" }
-              : { id: null, rackId: r.id, nom: "", ref: "", qte: 1, unite: "pcs", niveau: L, note: "" };
+  S.form = it ? { id: it.id, rackId: r.id, nom: it.nom || "", ref: it.ref || "", qte: it.qte ?? 1, unite: it.unite || "", niveau: Math.min(Math.max(1, it.niveau), Math.max(1, r.niveaux | 0)), note: it.note || "", lotDe: it.lotDe ?? "", lotA: it.lotA ?? "" }
+              : { id: null, rackId: r.id, nom: "", ref: "", qte: 1, unite: "pcs", niveau: L, note: "", lotDe: "", lotA: "" };
   S.selLevel = S.form.niveau;
   renderPanel();
   setTimeout(() => { const n = document.getElementById("f-nom"); if (n) { n.focus(); n.scrollIntoView({ block: "nearest" }); } }, 0);
@@ -1493,6 +1495,8 @@ function itemForm(r) {
     field("Emplacement", "f-niv", F.niveau, v => { F.niveau = +v; S.selLevel = +v; }, { tag: "select", options: lv }),
     field("Quantité", "f-qte", F.qte, set("qte"), { live: true, type: "number", step: "any", min: 0, inputmode: "decimal" }),
     field("Unité", "f-unite", F.unite, set("unite"), { live: true, placeholder: "pcs, m, cartons…" }),
+    field("Lots du (facultatif, pour une caisse)", "f-de", F.lotDe, set("lotDe"), { live: true, inputmode: "numeric", placeholder: "ex. 50000" }),
+    field("au", "f-a", F.lotA, set("lotA"), { live: true, inputmode: "numeric", placeholder: "ex. 50312" }),
     field("Note", "f-note", F.note, set("note"), { live: true, tag: "textarea", full: true }),
     it && it.maj ? el("div", { class: "full who", text: "Mis à jour " + [ago(it.maj), who(it.majPar) && "par " + who(it.majPar)].filter(Boolean).join(" ") + (it.exemple ? " · exemple" : "") }) : null,
     el("div", { class: "acts" },
@@ -1512,6 +1516,12 @@ async function saveItem(r) {
   const nom = F.nom.trim();
   if (!nom) { toast("Indiquez une désignation pour l'article.", true); document.getElementById("f-nom")?.focus(); return; }
   const data = { rackId: r.id, niveau: +F.niveau, nom, ref: F.ref.trim(), qte: num(F.qte, 0), unite: F.unite.trim(), note: F.note.trim(), maj: new Date().toISOString(), majPar: uid || null };
+  const de = String(F.lotDe ?? "").replace(/\D/g, ""), a = String(F.lotA ?? "").replace(/\D/g, "");
+  if (de || a) {
+    if (!de || !a || +a < +de) { toast("Plage de lots incomplète : indiquez le premier et le dernier lot (le dernier après le premier).", true); return; }
+    if (+a - +de > 20000) { toast("Plage trop grande (20 000 lots au maximum).", true); return; }
+    data.lotDe = +de; data.lotA = +a;
+  }
   const prev = F.id && S.items.get(F.id);
   if (prev && prev.exemple) data.exemple = true;
   const ref = F.id ? db.doc("items/" + F.id) : db.collection("items").doc();
@@ -1880,8 +1890,13 @@ const norm = s => String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ
 function catalog() {
   const S = T.S, m = new Map();
   for (const it of S.items.values()) {
-    const key = String(it.lot ?? it.nom ?? "").trim(); if (!key) continue;
     const r = S.racks.get(it.rackId);
+    if (it.lotDe != null && it.lotA != null && +it.lotA >= +it.lotDe && +it.lotA - +it.lotDe <= 20000) { // caisse couvrant une plage de lots
+      const loc = (r ? T.rackName(r) + ((r.niveaux | 0) > 1 ? ` · étage ${it.niveau}` : "") : "Emplacement inconnu") + (it.nom ? ` · ${it.nom}` : "");
+      for (let k = +it.lotDe; k <= +it.lotA; k++) { const key = String(k), e = m.get(key) || { lot: key, idlot: "", unite: "", qte: 0, locs: [] }; if (!e.locs.includes(loc)) e.locs.push(loc); m.set(key, e); }
+      continue;
+    }
+    const key = String(it.lot ?? it.nom ?? "").trim(); if (!key) continue;
     const loc = r ? T.rackName(r) + ((r.niveaux | 0) > 1 ? ` · étage ${it.niveau}` : "") : "Emplacement inconnu";
     const e = m.get(key) || { lot: key, idlot: it.idlot ?? it.ref ?? "", unite: it.unite || "", qte: 0, locs: [] };
     e.qte += +it.qte || 0; if (!e.locs.includes(loc)) e.locs.push(loc);

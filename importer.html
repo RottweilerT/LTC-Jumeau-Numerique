@@ -31,6 +31,7 @@ $("#f").addEventListener("change", async () => {
   const file = $("#f").files[0]; if (!file) return;
   try {
     const j = JSON.parse(await file.text());
+    if (j.format === "jumeau-rangement") { await preparerRangement(j); return; }
     if (j.format !== "jumeau-batiment" || !j.collections) throw new Error("Ce fichier n'est pas un export du jumeau.");
     data = j;
     const rows = Object.entries(j.collections).map(([c, d]) => `<tr><td>${NOMS[c] || c}</td><td><b>${Object.keys(d).length}</b></td></tr>`).join("");
@@ -38,6 +39,24 @@ $("#f").addEventListener("change", async () => {
     $("#go").disabled = !db;
   } catch (e) { $("#res").innerHTML = `<span class="err">${e.message || "Fichier illisible."}</span>`; }
 });
+/* Fichier de rangement : des caisses à poser dans un emplacement désigné par son code (ex. coffre C3),
+   étages comptés depuis le haut (0 = étage du haut). L'emplacement est cherché dans la base au moment de l'import. */
+async function preparerRangement(j) {
+  if (!db) throw new Error("La base Firebase n'est pas branchée.");
+  $("#res").textContent = "Recherche de l'emplacement " + j.code + "…";
+  const s = await db.collection("racks").get();
+  const tous = s.docs.map(d => ({ id: d.id, ...d.data() })).filter(r => String(r.code || "").toUpperCase() === String(j.code).toUpperCase());
+  const r = tous.find(x => x.type === (j.type || "coffre")) || null;
+  if (!r) throw new Error(`Aucun ${j.type || "coffre"} « ${j.code} » dans le plan. Créez-le d'abord dans le jumeau, puis recommencez.`);
+  const n = Math.max(1, r.niveaux | 0), haut = Math.max(...j.items.map(x => x.etageDepuisLeHaut || 0));
+  if (haut >= n) throw new Error(`Le ${j.type || "coffre"} ${j.code} n'a que ${n} étage(s) : il en faut au moins ${haut + 1}.`);
+  const t = new Date().toISOString(), docs = {};
+  j.items.forEach((x, k) => { const { etageDepuisLeHaut, ...d } = x; docs[`rg-${r.id}-${j.cle}-${k + 1}`] = { ...d, rackId: r.id, niveau: n - (etageDepuisLeHaut || 0), maj: t, majPar: null }; });
+  data = { collections: { items: docs } };
+  const lignes = Object.values(docs).map(d => `<tr><td>${d.nom}</td><td>étage ${d.niveau}</td></tr>`).join("");
+  $("#res").innerHTML = `<b>${j.titre || "Rangement"}</b> : ${j.items.length} caisses dans le ${j.type || "coffre"} ${j.code} (${n} étages, l'étage ${n} est en haut).<table>${lignes}</table>Si vous importez deux fois ce fichier, les caisses sont remplacées, pas dupliquées.`;
+  $("#go").disabled = false;
+}
 $("#go").addEventListener("click", async () => {
   if (!data || !db) return;
   $("#go").disabled = true;
