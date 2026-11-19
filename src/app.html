@@ -197,6 +197,18 @@ h3{margin:0 0 8px;font-family:var(--f-display);font-size:17px;font-weight:600;le
 .chip{display:inline-flex;align-items:baseline;gap:6px;max-width:100%;border:1px solid color-mix(in srgb,var(--carton) 55%,var(--line));background:color-mix(in srgb,var(--carton) 16%,var(--surface));border-radius:4px;padding:4px 8px;cursor:pointer;text-align:left}
 .chip span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .chip b{font-family:var(--f-mono);font-weight:500;font-size:12px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.chip.caisse{flex-direction:column;align-items:flex-start;gap:1px;padding:6px 10px;border-width:1.5px;min-width:120px}
+.chip.caisse .c-nom{font-weight:600}
+.chip.caisse b{font-size:12px;color:var(--muted);font-weight:500}
+.chip.caisse .c-hit{font-size:12px;font-weight:700;color:var(--match)}
+.caisse-box{max-height:88vh}
+.caisse-box .acts{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.caisse-box .acts .sp{flex:1}
+.caisse-box input[type=search]{padding:10px 12px;font-size:15px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink)}
+.caisse-liste{overflow:auto;max-height:52vh;border:1px solid var(--line);border-radius:8px}
+.caisse-liste>div{display:grid;grid-template-columns:1fr 1fr 1.2fr;gap:8px;padding:6px 10px;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums}
+.caisse-liste .cl-tete{position:sticky;top:0;background:var(--surface-2,var(--surface));font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+.caisse-liste .cible{background:color-mix(in srgb,var(--match) 22%,transparent);font-weight:700}
 .chip.hit{border-color:var(--match);box-shadow:0 0 0 2px color-mix(in srgb,var(--match) 35%,transparent)}
 .chip.open{border-color:var(--accent)}
 .add{border:1px dashed var(--line);background:none;border-radius:4px;padding:4px 8px;color:var(--muted);cursor:pointer}
@@ -604,7 +616,13 @@ function occClass(r) {
 }
 // Un article peut couvrir une plage de lots (ex. caisse 50000 → 50312) : chercher 50123 le trouve
 // (si la caisse a la liste exacte de ses lots, seuls ceux-là y sont ; sinon toute la plage)
-const dansPlage = (it, q) => it.lotDe != null && it.lotA != null && /^\d{4,6}$/.test(q) && +q >= +it.lotDe && +q <= +it.lotA && (!Array.isArray(it.lots) || it.lots.includes(+q));
+const dansPlage = (it, q) => {
+  if (it.lotDe == null || it.lotA == null || !/^\d{4,6}$/.test(q)) return false;
+  if (Array.isArray(it.contenu) && q.length === 6 && it.contenu.some(x => String(x.r) === q)) return true; // réf. à 6 chiffres
+  return +q >= +it.lotDe && +q <= +it.lotA && (!Array.isArray(it.lots) || it.lots.includes(+q));
+};
+const estCaisse = it => it.lotDe != null && it.lotA != null;
+const lotDeCaisse = (it, q) => { if (!Array.isArray(it.contenu)) return /^\d{4,6}$/.test(q) && dansPlage(it, q) ? { l: +q } : null; return it.contenu.find(x => String(x.l) === q || String(x.r) === q) || null; };
 function itemHit(it, q) { return norm(it.nom).includes(q) || norm(it.ref).includes(q) || norm(it.note).includes(q) || dansPlage(it, q); }
 function searchResults() {
   const q = norm(S.q.trim()); if (!q) return { items: [], racks: new Set() };
@@ -1270,6 +1288,12 @@ function levelRow(r, L, list, q) {
   const cells = el("div", { class: "cells" });
   for (const it of list) {
     const cls = ["chip"]; if (q && itemHit(it, q)) cls.push("hit"); if (S.form?.id === it.id) cls.push("open");
+    if (estCaisse(it)) { // caisse : on voit son numéro et sa plage ; un appui ouvre la liste des lots qu'elle contient
+      const tr = q ? lotDeCaisse(it, q) : null;
+      cells.append(el("button", { class: cls.join(" ") + " caisse", title: "Voir les lots de la caisse", onclick: () => ouvrirCaisse(r, it, tr ? String(tr.l) : "") },
+        el("span", { class: "c-nom", text: it.nom }), el("b", { text: `${Array.isArray(it.lots) ? it.lots.length : +it.lotA - +it.lotDe + 1} lots` }), tr ? el("span", { class: "c-hit", text: `contient ${tr.l}` }) : null));
+      continue;
+    }
     cells.append(el("button", { class: cls.join(" "), title: [it.nom, it.ref].filter(Boolean).join(" · "), onclick: () => openForm(r, it) },
       el("span", { text: it.nom }), (+it.qte === 1 && it.unite === "lot") ? null : el("b", { text: fmt(it.qte) + (it.unite ? " " + it.unite : "") })));
   }
@@ -1277,6 +1301,36 @@ function levelRow(r, L, list, q) {
   if (L != null && !list.length && !S.canWrite) cells.append(el("span", { class: "hint", text: "vide" }));
   return el("div", { class: "lvl" + (L != null && S.selLevel === L ? " cur" : "") + (L == null ? " extra" : "") },
     el("div", { class: "tag" }, L == null ? "!" : "N" + L, el("small", { text: L == null ? "à replacer" : "" })), cells);
+}
+function ouvrirCaisse(r, it, cible) {
+  const lignes = (Array.isArray(it.contenu) ? it.contenu : (Array.isArray(it.lots) ? it.lots : Array.from({ length: +it.lotA - +it.lotDe + 1 }, (_, i) => +it.lotDe + i)).map(l => ({ l })))
+    .slice().sort((a, b) => String(a.l).localeCompare(String(b.l), "fr", { numeric: true }));
+  let fq = "";
+  const close = () => m.remove();
+  const liste = el("div", { class: "caisse-liste" });
+  const nb = el("div", { class: "sub" });
+  const dessiner = () => {
+    const q = norm(fq.trim()), vis = lignes.filter(x => !q || norm(x.l).includes(q) || norm(x.r).includes(q) || norm(x.f).includes(q));
+    nb.textContent = `${vis.length} lot${vis.length > 1 ? "s" : ""}${q ? " sur " + lignes.length : ""}`;
+    liste.replaceChildren(el("div", { class: "cl-tete" }, el("span", { text: "N° de lot" }), el("span", { text: "Réf." }), el("span", { text: "Format" })),
+      ...vis.map(x => el("div", { class: "cl-l" + (cible && String(x.l) === cible ? " cible" : "") }, el("b", { text: x.l }), el("span", { text: x.r || "" }), el("span", { text: x.f || "" }))));
+  };
+  const rech = el("input", { type: "search", placeholder: "Chercher dans la caisse (n° de lot, réf., format)…", "aria-label": "Chercher dans la caisse" });
+  rech.addEventListener("input", () => { fq = rech.value; dessiner(); });
+  const csv = () => {
+    const qv = v => '"' + String(v ?? "").replace(/"/g, '""') + '"';
+    const txt = "\ufeff" + [["N° de lot", "Réf.", "Format"].map(qv).join(";"), ...lignes.map(x => [x.l, x.r, x.f].map(qv).join(";"))].join("\r\n");
+    const a = el("a", { href: URL.createObjectURL(new Blob([txt], { type: "text/csv;charset=utf-8" })), download: (it.nom || "caisse").replace(/[^\w\-]+/g, "_") + ".csv" }); document.body.append(a); a.click(); a.remove();
+  };
+  const m = el("div", { class: "modal", onclick: e => { if (e.target === m) close(); } }, el("div", { class: "box caisse-box" },
+    el("strong", { style: "font-size:18px", text: it.nom || "Caisse" }),
+    el("div", { class: "sub", text: `${rackName(r)} · étage ${it.niveau}${it.note ? " · " + it.note : ""}` }),
+    rech, nb, liste,
+    el("div", { class: "acts" }, el("button", { class: "btn", type: "button", text: "Télécharger la liste (Excel/CSV)", onclick: csv }),
+      S.canWrite ? el("button", { class: "btn", type: "button", text: "Modifier la caisse", onclick: () => { close(); openForm(r, it); } }) : null,
+      el("span", { class: "sp" }), el("button", { class: "btn primary", type: "button", text: "Fermer", onclick: close }))));
+  document.body.append(m); dessiner();
+  if (cible) setTimeout(() => liste.querySelector(".cible")?.scrollIntoView({ block: "center" }), 30);
 }
 function openForm(r, it, L) {
   S.armed = null;
@@ -1327,6 +1381,7 @@ async function saveItem(r) {
   }
   const prev = F.id && S.items.get(F.id);
   if (prev && Array.isArray(prev.lots) && data.lotDe != null) data.lots = prev.lots.filter(x => x >= data.lotDe && x <= data.lotA); // garder la liste exacte des lots de la caisse
+  if (prev && Array.isArray(prev.contenu) && data.lotDe != null) data.contenu = prev.contenu.filter(x => +x.l >= data.lotDe && +x.l <= data.lotA);
   if (prev && prev.exemple) data.exemple = true;
   const ref = F.id ? db.doc("items/" + F.id) : db.collection("items").doc();
   if (await write(() => ref.set(data))) { S.form = null; toast(prev ? "Article mis à jour" : "Article ajouté en " + r.code + "-N" + data.niveau); renderPanel(); }
@@ -1372,14 +1427,14 @@ function renderResults() {
   const rackOnly = [...racks].filter(id => !items.some(i => i.rackId === id)).map(id => S.racks.get(id));
   for (const r of rackOnly.slice(0, 4)) box.append(el("button", { onmousedown: e => e.preventDefault(), onclick: () => pick(r.id) }, el("span", { text: rackName(r) }), el("span", { class: "addr", text: zoneOf(r.zone)?.nom || "" })));
   for (const it of items.slice(0, 10)) box.append(el("button", { onmousedown: e => e.preventDefault(), onclick: () => montrer(it) },
-    el("span", {}, el("span", { text: it.nom }), it.ref ? el("div", { class: "sub", style: "font-size:12px;color:var(--muted)", text: it.ref + " · " + fmt(it.qte) + " " + (it.unite || "") }) : null),
+    el("span", {}, el("span", { text: estCaisse(it) && lotDeCaisse(it, q) ? `Lot ${lotDeCaisse(it, q).l} · ${it.nom}` : it.nom }), it.ref ? el("div", { class: "sub", style: "font-size:12px;color:var(--muted)", text: it.ref + " · " + fmt(it.qte) + " " + (it.unite || "") }) : null),
     el("span", { class: "addr", text: addr(it) })));
   if (!items.length && !rackOnly.length) box.append(el("div", { class: "empty", text: "Aucun article ne correspond à « " + q + " »." }));
 }
 // Lot choisi dans la recherche : on montre seulement le plan avec son emplacement en rouge ;
 // un clic sur l'emplacement ouvre ensuite le détail des niveaux.
 function montrer(it) {
-  S.q = String(it.nom); $("#q").value = S.q; $("#q").blur(); $("#results").hidden = true;
+  S.q = estCaisse(it) && lotDeCaisse(it, S.q.trim()) ? S.q.trim() : String(it.nom); $("#q").value = S.q; $("#q").blur(); $("#results").hidden = true;
   S.sel = null; S.form = null; S.rackEdit = false; S.armed = null; VB = null;
   render();
   const st = $("#stage"), r = st.getBoundingClientRect();
@@ -1697,7 +1752,8 @@ function catalog() {
     const r = S.racks.get(it.rackId);
     if (it.lotDe != null && it.lotA != null && +it.lotA >= +it.lotDe && +it.lotA - +it.lotDe <= 20000) { // caisse couvrant une plage de lots
       const loc = (r ? T.rackName(r) + ((r.niveaux | 0) > 1 ? ` · étage ${it.niveau}` : "") : "Emplacement inconnu") + (it.nom ? ` · ${it.nom}` : "");
-      for (const k of Array.isArray(it.lots) ? it.lots : Array.from({ length: +it.lotA - +it.lotDe + 1 }, (_, i) => +it.lotDe + i)) { const key = String(k), e = m.get(key) || { lot: key, idlot: "", unite: "", qte: 0, locs: [] }; if (!e.locs.includes(loc)) e.locs.push(loc); m.set(key, e); }
+      const cont = Array.isArray(it.contenu) ? it.contenu : (Array.isArray(it.lots) ? it.lots : Array.from({ length: +it.lotA - +it.lotDe + 1 }, (_, i) => +it.lotDe + i)).map(l => ({ l }));
+      for (const x of cont) { const key = String(x.l), e = m.get(key) || { lot: key, idlot: x.r ? String(x.r) : "", unite: x.f || "", qte: x.f ? 1 : 0, locs: [] }; if (!e.locs.includes(loc)) e.locs.push(loc); m.set(key, e); }
       continue;
     }
     const key = String(it.lot ?? it.nom ?? "").trim(); if (!key) continue;
