@@ -510,6 +510,10 @@ h3{margin:0 0 8px;font-family:var(--f-display);font-size:17px;font-weight:600;le
 .vventes.sous .vchip{font-size:13px;padding:6px 12px}
 .vchip.add{border-style:dashed;color:var(--muted);font-weight:500}
 .vente-tete{flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:space-between}
+.vt-types{display:flex;flex-wrap:wrap;gap:8px 18px;border:1px solid var(--line);border-radius:10px;padding:8px 12px;margin:0}
+.vt-types legend{padding:0 4px;font-size:14px}
+.vform .vt-type{display:flex;align-items:center;gap:8px;font-size:15px;color:var(--ink);cursor:pointer;flex-direction:row}
+.vt-type input{width:20px;height:20px;margin:0}
 .vente-nom{font-family:var(--f-display);font-size:24px;line-height:1.1}
 .vente-ligne{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;font-size:14px}
 .vente-choix{display:flex;flex-direction:column;gap:6px;max-height:50vh;overflow:auto}
@@ -2083,13 +2087,14 @@ function rang(v) {
   return l.findIndex(x => x.id === v.id) + 1 || null;
 }
 const ventesDoc = () => T.db.doc("config/ventes");
-async function creerVente(nom, date, etat) {
+async function creerVente(nom, date, etat, type) {
   const id = "v" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
-  const x = { nom, date: date || "", creee: new Date().toISOString(), par: T.uid || "", ...(etat ? { etat } : {}) };
+  const x = { nom, date: date || "", type: type || "collection", creee: new Date().toISOString(), par: T.uid || "", ...(etat ? { etat } : {}) };
   await ventesDoc().set({ liste: { [id]: x } }, { merge: true });
   V.ventes.set(id, { id, ...x });
   return id;
 }
+const libType = x => x.type === "offre" ? "Vente sur offre" : "Vente collection";
 async function majVente(id, data) { await ventesDoc().set({ liste: { [id]: data } }, { merge: true }); }
 async function supprimerVente(id) {
   const vs = [...V.list.values()].filter(x => x.vente === id);
@@ -2110,18 +2115,22 @@ function modale(titre, contenu) {
 function formVente(close, ok, init = {}) {
   const nom = el("input", { id: "vt-nom", placeholder: "ex. Vente Collections Décembre 2026", maxlength: 80 }); nom.value = init.nom || "";
   const date = el("input", { id: "vt-date", type: "date" }); date.value = init.date || "";
+  // Type de vente : collection ou sur offre (les anciennes ventes sans type sont des ventes collection)
+  let type = init.type || "collection";
+  const radio = (k, lab) => { const i = el("input", { type: "radio", name: "vt-type", value: k, checked: type === k }); i.addEventListener("change", () => { if (i.checked) type = k; }); return el("label", { class: "vt-type" }, i, lab); };
   setTimeout(() => nom.focus(), 30);
   return el("form", { class: "vform", onsubmit: async e => {
     e.preventDefault(); const n = nom.value.replace(/\s+/g, " ").trim();
     if (!n) { toast("Indiquez le nom de la vente.", true); nom.focus(); return; }
-    try { await ok(n, date.value); close(); } catch (_) { toast("Enregistrement impossible. Vérifiez la connexion.", true); }
+    try { await ok(n, date.value, type); close(); } catch (_) { toast("Enregistrement impossible. Vérifiez la connexion.", true); }
   } }, el("label", { class: "full" }, "Nom de la vente (affiché en haut à droite du compte rendu)", nom),
     el("label", {}, "Date de la vente", date),
+    el("fieldset", { class: "full vt-types" }, el("legend", { text: "Type de vente" }), radio("collection", "Vente collection"), radio("offre", "Vente sur offre")),
     el("div", { class: "vacts full" }, el("button", { class: "btn primary big", type: "submit", text: init.nom ? "Enregistrer" : "Créer la vente" }), el("button", { class: "btn big", type: "button", text: "Annuler", onclick: close })));
 }
 function nouvelleVente(apres, etat) {
   const t = "Nouvelle vente"; // rangée ensuite automatiquement selon sa date
-  modale(t, close => [formVente(close, async (n, d) => { const id = await creerVente(n, d, etat); toast(`Vente « ${n} » créée`); if (apres) await apres(id); else { setVenteSel(id); render(); } })]);
+  modale(t, close => [formVente(close, async (n, d, ty) => { const id = await creerVente(n, d, etat, ty); toast(`Vente « ${n} » créée`); if (apres) await apres(id); else { setVenteSel(id); render(); } })]);
 }
 function menuRanger(v) {
   modale(`Ranger la visite de ${nomClient(v)}`, close => {
@@ -2337,7 +2346,7 @@ function listView() {
     else out.push(el("div", { class: "vlist" }, lst.map(x => {
       const c = el("div", { class: "vitem vente-carte", role: "button", tabindex: 0, title: "Appui long ou clic droit : ranger cette vente", onclick: () => { setVenteSel(x.id); render(); window.scrollTo(0, 0); }, onkeydown: e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setVenteSel(x.id); render(); } } },
         el("b", { class: "vente-nom", text: x.nom }),
-        el("div", { class: "vmeta", text: (x.date ? "le " + fDate(x.date) + " · " : "") + `${nbV(x.id)} visite${nbV(x.id) > 1 ? "s" : ""}` }),
+        el("div", { class: "vmeta", text: libType(x) + " · " + (x.date ? "le " + fDate(x.date) + " · " : "") + `${nbV(x.id)} visite${nbV(x.id) > 1 ? "s" : ""}` }),
         el("span", { class: "vente-ouvrir", text: "Ouvrir la vente →" }));
       appuiLong(c, () => menuVente(V.ventes.get(x.id) || x)); return c;
     })));
@@ -2350,11 +2359,11 @@ function listView() {
   if (vt) {
     const armedV = V.delVente === vt.id;
     out.push(el("div", { class: "vcard vente-tete" },
-      el("div", {}, el("div", { class: "eyebrow", text: libEtat[etatVente(vt)] }), el("b", { class: "vente-nom", text: vt.nom }), el("div", { class: "vmeta", text: (vt.date ? "le " + fDate(vt.date) + " · " : "") + `${nbV(vt.id)} visite${nbV(vt.id) > 1 ? "s" : ""}` })),
+      el("div", {}, el("div", { class: "eyebrow", text: libEtat[etatVente(vt)] }), el("b", { class: "vente-nom", text: vt.nom }), el("div", { class: "vmeta", text: libType(vt) + " · " + (vt.date ? "le " + fDate(vt.date) + " · " : "") + `${nbV(vt.id)} visite${nbV(vt.id) > 1 ? "s" : ""}` })),
       el("div", { class: "vacts" },
         el("button", { class: "btn small", text: "Historique des lots", onclick: () => histLots(vt, tout.filter(v => v.vente === vt.id)) }),
         el("button", { class: "btn small", text: "Lots annotés", onclick: () => recapVente(vt.nom, tout.filter(v => v.vente === vt.id)) }),
-        el("button", { class: "btn small", text: "Renommer", onclick: () => modale("Modifier la vente", close => [formVente(close, async (n, d) => majVente(vt.id, { nom: n, date: d }), vt)]) }),
+        el("button", { class: "btn small", text: "Modifier", onclick: () => modale("Modifier la vente", close => [formVente(close, async (n, d, ty) => majVente(vt.id, { nom: n, date: d, type: ty }), vt)]) }),
         el("button", { class: "btn small danger" + (armedV ? " armed" : ""), text: armedV ? "Confirmer : supprimer la vente" : "Supprimer la vente", title: "Les visites ne sont pas supprimées : elles vont dans « Visites sans vente ».", onclick: async () => {
           if (!armedV) { V.delVente = vt.id; render(); setTimeout(() => { if (V.delVente === vt.id) { V.delVente = null; render(); } }, 6000); return; }
           V.delVente = null;
