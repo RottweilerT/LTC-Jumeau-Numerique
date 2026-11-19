@@ -356,6 +356,7 @@ h3{margin:0 0 8px;font-family:var(--f-display);font-size:17px;font-weight:600;le
 .recap-vn{font-size:15px}
 .recap-c{font-weight:600}
 .zone-titre{margin:4px 0 0;font-size:15px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+.recherche-client{width:100%;max-width:520px;padding:10px 14px;font-size:15px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink)}
 .zone-finis{border:1px solid var(--line);border-radius:12px;background:var(--surface-2);padding:4px 12px}
 .zone-finis[open]{padding-bottom:12px}
 .zone-finis summary{cursor:pointer;padding:10px 0;font-size:15px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
@@ -1840,7 +1841,7 @@ V.ventes = new Map();
 // Navigation : 1) section (ventes en cours / à venir / passées) → 2) une vente → 3) ses visites
 V.venteSel = (() => { try { const x = localStorage.getItem("vente-affichee") || ""; return ["plus", "a_ranger", "toutes", "passees", "avenir"].includes(x) ? "" : x; } catch (_) { return ""; } })();
 V.section = (() => { try { const x = localStorage.getItem("ventes-section"); return ["en_cours", "a_venir", "passee"].includes(x) ? x : "en_cours"; } catch (_) { return "en_cours"; } })();
-const setVenteSel = id => { V.venteSel = id || ""; V.form = null; try { localStorage.setItem("vente-affichee", V.venteSel); } catch (_) {} };
+const setVenteSel = id => { if ((id || "") !== V.venteSel) V.qClient = ""; V.venteSel = id || ""; V.form = null; try { localStorage.setItem("vente-affichee", V.venteSel); } catch (_) {} };
 const setSection = k => { V.section = k; setVenteSel(""); try { localStorage.setItem("ventes-section", k); } catch (_) {} };
 // Ventes de la plus proche à la plus lointaine (date croissante) ; celles sans date à la fin
 const ventesTriees = () => [...V.ventes.values()].sort((a, b) => (!a.date) - (!b.date) || String(a.date || "").localeCompare(String(b.date || "")) || String(a.creee || "").localeCompare(String(b.creee || "")));
@@ -2192,13 +2193,21 @@ function listView() {
     return card;
   };
   // Deux zones : clients en cours (affichés) et clients terminés (repliés, à déplier)
-  const enCours = vs.filter(v => v.statut !== "terminee"), finis = vs.filter(v => v.statut === "terminee");
+  // Recherche d'un client (nom, prénom, n° du client ou collaborateur) dans les deux zones
+  const qc = norm((V.qClient || "").trim());
+  const cherche = el("input", { id: "vc-q", type: "search", class: "recherche-client", placeholder: "Rechercher un client (nom, prénom, n°, accompagnateur)…", "aria-label": "Rechercher un client", value: V.qClient || "" });
+  cherche.addEventListener("input", () => { V.qClient = cherche.value; render(); });
+  out.push(cherche);
+  const trouve = v => !qc || norm(`${v.prenom || ""} ${v.nom || ""} ${v.nom || ""} ${v.prenom || ""} ${v.collab || ""}`).includes(qc) || String(rang(v) || "") === qc.replace(/^n[°o]?\s*/, "");
+  const vf = vs.filter(trouve);
+  const enCours = vf.filter(v => v.statut !== "terminee"), finis = vf.filter(v => v.statut === "terminee");
+  if (qc && !vf.length) { out.push(el("p", { class: "hint", text: `Aucun client ne correspond à « ${V.qClient.trim()} ».` })); return out; }
   out.push(el("h4", { class: "zone-titre", text: `Clients en cours (${enCours.length})` }));
-  out.push(enCours.length ? el("div", { class: "vlist" }, enCours.map(carte)) : el("p", { class: "hint", text: "Aucun client en cours." }));
+  out.push(enCours.length ? el("div", { class: "vlist" }, enCours.map(carte)) : el("p", { class: "hint", text: qc ? "Aucun client en cours ne correspond." : "Aucun client en cours." }));
   if (finis.length) {
     const d = el("details", { class: "zone-finis" }, el("summary", { text: `Clients terminés (${finis.length})` }), el("div", { class: "vlist" }, finis.map(carte)));
-    if (V.finisOuvert) d.open = true;
-    d.addEventListener("toggle", () => { V.finisOuvert = d.open; });
+    if (V.finisOuvert || qc) d.open = true; // pendant une recherche, les clients terminés trouvés sont affichés
+    d.addEventListener("toggle", () => { if (!qc) V.finisOuvert = d.open; });
     out.push(d);
   }
   return out;
