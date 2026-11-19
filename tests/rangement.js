@@ -4,7 +4,7 @@ const { chromium } = require('playwright'); const fs = require('fs');
   const iso = m => { const d = new Date(); d.setDate(d.getDate() + m); return d.toLocaleDateString('sv-SE'); };
   const data = { personnes: { p_a: { nom: 'Armand Charrin' } }, config: { profils: { remise: 1, ajout: 1 }, batiment: { nom: 'Bâtiment', largeur: 9, profondeur: 14, zones: [], murs: [] }, ventes: { liste: { vo: { nom: 'VO246', date: iso(20), type: 'offre' } } } },
     racks: { r1: { code: 'A18', type: 'etagere', niveaux: 4, x: 1, y: 1, w: 2, d: 1 }, rc3: { code: 'C3', type: 'coffre', niveaux: 5, x: 5, y: 5, w: 1, d: 1 } }, items: {},
-    visites: { a: { prenom: 'Jean', nom: 'Test', date: iso(0), heure: '09:00', statut: 'en_cours', vente: 'vo', signatures: {}, historique: [], lots: [{ lot: '50123', vu: null }, { lot: '53527', vu: null }, { lot: '54000', vu: null }] } } };
+    visites: { a: { prenom: 'Jean', nom: 'Test', date: iso(0), heure: '09:00', statut: 'en_cours', vente: 'vo', signatures: {}, historique: [], lots: [{ lot: '50104', vu: null }, { lot: '50120', vu: null }, { lot: '50740', vu: null }] } } };
   const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true });
   await ctx.route('**/*', r => { const u = r.request().url();
     if (u.includes('firebase-app-compat')) return r.fulfill({ contentType: 'text/javascript', body: fs.readFileSync('tests/fake-firebase.js', 'utf8') });
@@ -22,7 +22,7 @@ const { chromium } = require('playwright'); const fs = require('fs');
   await p.reload(); await p.waitForTimeout(300); await p.setInputFiles('#f', '/mnt/user-data/outputs/rangement_VO246_coffre_C3.json'); await p.waitForTimeout(400); await p.click('#go'); await p.waitForTimeout(400);
   console.log('items :', await p.evaluate(() => Object.keys(JSON.parse(localStorage.getItem('__fakefs')).items).length));
   await p.goto('http://localhost:8765/'); await p.waitForTimeout(900);
-  await p.fill('#q', '50123'); await p.waitForTimeout(400); console.log('recherche :', (await p.locator('#results').innerText()).replace(/\n/g, ' / '));
+  await p.fill('#q', '50740'); await p.waitForTimeout(400); console.log('recherche :', (await p.locator('#results').innerText()).replace(/\n/g, ' / '));
   await p.click('#tabVis'); await p.waitForTimeout(300); await p.locator('.vente-carte').first().click(); await p.waitForTimeout(300);
   await p.click('.vitem:has-text("Test")'); await p.waitForTimeout(500); await p.click('button:has-text("Tous les lots")'); await p.waitForTimeout(300);
   console.log('plan actif :', await p.locator('.plan-btn:not(.hors-plan)').count(), '/ grisé :', await p.locator('.plan-btn.hors-plan').count());

@@ -801,7 +801,8 @@ function occClass(r) {
   return f < .34 ? 1 : f < .67 ? 2 : 3;
 }
 // Un article peut couvrir une plage de lots (ex. caisse 50000 → 50312) : chercher 50123 le trouve
-const dansPlage = (it, q) => it.lotDe != null && it.lotA != null && /^\d{4,6}$/.test(q) && +q >= +it.lotDe && +q <= +it.lotA;
+// (si la caisse a la liste exacte de ses lots, seuls ceux-là y sont ; sinon toute la plage)
+const dansPlage = (it, q) => it.lotDe != null && it.lotA != null && /^\d{4,6}$/.test(q) && +q >= +it.lotDe && +q <= +it.lotA && (!Array.isArray(it.lots) || it.lots.includes(+q));
 function itemHit(it, q) { return norm(it.nom).includes(q) || norm(it.ref).includes(q) || norm(it.note).includes(q) || dansPlage(it, q); }
 function searchResults() {
   const q = norm(S.q.trim()); if (!q) return { items: [], racks: new Set() };
@@ -1523,6 +1524,7 @@ async function saveItem(r) {
     data.lotDe = +de; data.lotA = +a;
   }
   const prev = F.id && S.items.get(F.id);
+  if (prev && Array.isArray(prev.lots) && data.lotDe != null) data.lots = prev.lots.filter(x => x >= data.lotDe && x <= data.lotA); // garder la liste exacte des lots de la caisse
   if (prev && prev.exemple) data.exemple = true;
   const ref = F.id ? db.doc("items/" + F.id) : db.collection("items").doc();
   if (await write(() => ref.set(data))) { S.form = null; toast(prev ? "Article mis à jour" : "Article ajouté en " + r.code + "-N" + data.niveau); renderPanel(); }
@@ -1893,7 +1895,7 @@ function catalog() {
     const r = S.racks.get(it.rackId);
     if (it.lotDe != null && it.lotA != null && +it.lotA >= +it.lotDe && +it.lotA - +it.lotDe <= 20000) { // caisse couvrant une plage de lots
       const loc = (r ? T.rackName(r) + ((r.niveaux | 0) > 1 ? ` · étage ${it.niveau}` : "") : "Emplacement inconnu") + (it.nom ? ` · ${it.nom}` : "");
-      for (let k = +it.lotDe; k <= +it.lotA; k++) { const key = String(k), e = m.get(key) || { lot: key, idlot: "", unite: "", qte: 0, locs: [] }; if (!e.locs.includes(loc)) e.locs.push(loc); m.set(key, e); }
+      for (const k of Array.isArray(it.lots) ? it.lots : Array.from({ length: +it.lotA - +it.lotDe + 1 }, (_, i) => +it.lotDe + i)) { const key = String(k), e = m.get(key) || { lot: key, idlot: "", unite: "", qte: 0, locs: [] }; if (!e.locs.includes(loc)) e.locs.push(loc); m.set(key, e); }
       continue;
     }
     const key = String(it.lot ?? it.nom ?? "").trim(); if (!key) continue;
