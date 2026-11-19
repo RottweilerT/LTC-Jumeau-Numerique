@@ -2225,7 +2225,7 @@ function typeField(F) {
   return el("div", { class: "vtypes" },
     opt("collection", "Vente collection", "Les lots se désignent par leurs 3 derniers chiffres"),
     opt("piece", "Vente à la pièce", "Numéros complets à 4 ou 5 chiffres"),
-    F.type === "collection" ? el("label", { class: "vpre" }, "Numéro de la vente (chiffres avant les 3 derniers)", pre) : null);
+    F.type === "collection" ? el("label", { class: "vpre" }, "Premier numéro de la vente", pre) : null);
 }
 function newForm() {
   const F = V.form, inp = (lab, k, type, full) => {
@@ -2237,7 +2237,7 @@ function newForm() {
   return el("form", { class: "vcard", onsubmit: async e => {
     e.preventDefault();
     if (!F.nom.trim()) { toast("Indiquez le nom du client.", true); $("#vf-nom")?.focus(); return; }
-    if (F.type === "collection" && !/^\d{1,3}$/.test(F.prefixe.trim())) { toast("Indiquez le numéro de la vente (les chiffres avant les 3 derniers, par ex. 40).", true); return; }
+    if (F.type === "collection" && !/^\d{1,3}$/.test(F.prefixe.trim())) { toast("Indiquez le premier numéro de la vente (par ex. 40).", true); return; }
     const cat0 = catalog(), coll0 = F.type === "collection", r0 = parseLots(F.lots.text, coll0, F.prefixe.trim(), cat0, []);
     if (!r0.added.length) { toast("Indiquez les lots que le client souhaite voir (saisie ou fichier).", true); $("#vf-paste")?.focus(); return; }
     const t0 = new Date().toISOString();
