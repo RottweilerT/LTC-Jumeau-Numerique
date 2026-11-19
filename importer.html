@@ -48,10 +48,10 @@ async function preparerRangement(j) {
   const tous = s.docs.map(d => ({ id: d.id, ...d.data() })).filter(r => String(r.code || "").toUpperCase() === String(j.code).toUpperCase());
   const r = tous.find(x => x.type === (j.type || "coffre")) || null;
   if (!r) throw new Error(`Aucun ${j.type || "coffre"} « ${j.code} » dans le plan. Créez-le d'abord dans le jumeau, puis recommencez.`);
-  const n = Math.max(1, r.niveaux | 0), haut = Math.max(...j.items.map(x => x.etageDepuisLeHaut || 0));
+  const n = Math.max(1, r.niveaux | 0), haut = Math.max(...j.items.map(x => x.niveau != null ? x.niveau - 1 : (x.etageDepuisLeHaut || 0))); // niveau : 1 = en bas ; sinon étage compté depuis le haut
   if (haut >= n) throw new Error(`Le ${j.type || "coffre"} ${j.code} n'a que ${n} étage(s) : il en faut au moins ${haut + 1}.`);
   const t = new Date().toISOString(), docs = {};
-  j.items.forEach((x, k) => { const { etageDepuisLeHaut, cle, ...d } = x; docs[`rg-${r.id}-${j.cle}-${cle ?? k + 1}`] = { ...d, rackId: r.id, niveau: n - (etageDepuisLeHaut || 0), maj: t, majPar: null }; });
+  j.items.forEach((x, k) => { const { etageDepuisLeHaut, cle, ...d } = x; docs[`rg-${r.id}-${j.cle}-${cle ?? k + 1}`] = { ...d, rackId: r.id, niveau: d.niveau != null ? d.niveau : n - (etageDepuisLeHaut || 0), maj: t, majPar: null }; });
   // Anciennes fiches du même rangement (ex. une 1re version par caisses) : retirées pour éviter les doublons
   const prefixe = `rg-${r.id}-${j.cle}-`, anciens = (await db.collection("items").get()).docs.map(d => d.id).filter(id => id.startsWith(prefixe) && !docs[id]);
   data = { collections: { items: docs }, supprimer: anciens.map(id => ["items", id]) };
