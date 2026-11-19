@@ -538,6 +538,10 @@ h3{margin:0 0 8px;font-family:var(--f-display);font-size:17px;font-weight:600;le
 .loc-cell{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px}
 .vtable .fmt{font-family:var(--f-mono);font-weight:600;white-space:nowrap}
 .plan-btn{white-space:nowrap;display:inline-flex;align-items:center;gap:4px;padding:3px 8px;color:var(--ink)}
+.fv{display:flex;flex-direction:column;gap:10px;max-height:72vh;overflow:auto}
+.fv .vform select{padding:8px;font-size:14px}
+.fv-ap{min-width:0;font-size:13px}
+.plan-btn.hors-plan{opacity:.45;border-style:dashed}
 .plan-btn svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:2;stroke-linejoin:round}
 .lot-acts{display:flex;flex-direction:column;align-items:flex-start;gap:6px}
 .btn.revu{white-space:nowrap}
@@ -1863,7 +1867,7 @@ setInterval(() => { if (!S.sel && !S.editMode && !document.activeElement?.matche
 const T = window.__twin; if (!T) return;
 const { el, toast } = T;
 const $ = s => document.querySelector(s);
-const V = { list: new Map(), loaded: false, cur: null, filter: "apresenter", taille: "toutes", form: null, adding: false, addQ: "", addSel: new Set(), confirm: null, mode: "plan", sub: false };
+const V = { cats: new Map(), list: new Map(), loaded: false, cur: null, filter: "apresenter", taille: "toutes", form: null, adding: false, addQ: "", addSel: new Set(), confirm: null, mode: "plan", sub: false };
 const pad = n => String(n).padStart(2, "0");
 const today = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
 const nowHM = () => { const d = new Date(); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
@@ -1885,7 +1889,30 @@ function catalog() {
   }
   return m;
 }
-const info = (cat, lot) => cat.get(String(lot)) || { lot: String(lot), idlot: "", unite: "", qte: 0, locs: ["Non rangé dans le jumeau"] };
+const info = (cat, lot) => cat.get(String(lot)) || cat.base?.get(String(lot)) || { lot: String(lot), idlot: "", unite: "", qte: 0, locs: ["Non rangé dans le jumeau"], plan: false };
+/* ---- Fichier des lots d'une vente (Excel importé) : base des visites de la vente ; le plan sert à situer ceux qui y sont rangés ----
+   Rangé dans config/lots_<vente>_<k> (morceaux de 1 500 lots) ; la vente garde { catalogue: { nom, n, parts, t } }. */
+const lotsDoc = (id, k) => T.db.doc(`config/lots_${id}_${k}`);
+function catVente(id) {
+  const c = V.ventes.get(id)?.catalogue; if (!c) return null;
+  const e = V.cats.get(id);
+  if (e && e.t === c.t) return e.map;
+  if (!e || e.t !== c.t) {
+    const ent = { t: c.t, map: null }; V.cats.set(id, ent);
+    Promise.all([...Array(c.parts || 1)].map((_, k) => lotsDoc(id, k).get())).then(ds => {
+      const m = new Map(); for (const d of ds) for (const x of ((d.exists ? d.data() : null)?.lots || [])) m.set(String(x.l), x);
+      if (V.cats.get(id) === ent) { ent.map = m; render(); }
+    }).catch(() => { if (V.cats.get(id) === ent) V.cats.delete(id); toast("Le fichier des lots de la vente n'a pas pu être chargé. Vérifiez la connexion.", true); });
+  }
+  return null;
+}
+function catalogFor(v) {
+  const base = catalog(), sm = v && v.vente ? catVente(v.vente) : null;
+  if (!sm) return base;
+  const m = new Map();
+  for (const x of sm.values()) { const b = base.get(x.l); m.set(x.l, { lot: x.l, idlot: x.r || b?.idlot || "", unite: x.u || b?.unite || "", qte: +x.q || b?.qte || 0, desc: x.d || "", locs: b ? b.locs : ["Pas encore placé sur le plan"], plan: !!b }); }
+  m.fichier = true; m.base = base; return m;
+}
 const fmtFormat = e => e.unite ? `${e.unite}${e.qte ? " × " + e.qte : ""}` : "—";
 
 /* ---- Données ---- */
@@ -1930,8 +1957,9 @@ T.listeners.push(() => { start(); if (V.mode === "visites" && !V.confirm && !doc
 
 /* ---- Onglets ---- */
 // Petit bouton « Plan » avec une icône de repère, monochrome (couleur du texte)
-function boutonPlan(lot) {
-  const b = el("button", { class: "btn small plan-btn", title: "Voir où se trouve ce lot sur le plan", "aria-label": "Voir le lot " + lot + " sur le plan", onclick: () => voirSurPlan(lot) });
+function boutonPlan(lot, surPlan = true) {
+  const b = el("button", { class: "btn small plan-btn" + (surPlan ? "" : " hors-plan"), title: surPlan ? "Voir où se trouve ce lot sur le plan" : "Ce lot n'est pas encore placé sur le plan", "aria-label": surPlan ? "Voir le lot " + lot + " sur le plan" : "Lot " + lot + " pas encore placé sur le plan",
+    onclick: () => surPlan ? voirSurPlan(lot) : toast(`Le lot ${lot} n'est pas encore placé sur le plan.`) });
   b.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-6.5-6.2-6.5-11a6.5 6.5 0 0 1 13 0c0 4.8-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.3"/></svg><span>Plan</span>';
   return b;
 }
@@ -2112,6 +2140,112 @@ function modale(titre, contenu) {
   const m = el("div", { class: "modal", onclick: e => { if (e.target === m) close(); } }, el("div", { class: "box" }, el("strong", { style: "font-size:18px", text: titre }), ...contenu(close)));
   document.body.append(m); return close;
 }
+/* ---- Importer le fichier Excel des lots d'une vente ---- */
+const CHAMPS_FICHIER = [
+  ["l", "N° de lot (obligatoire)", h => /^(n°|no|num|numero)?\s*(de\s*)?lots?$|^lot\s*(n°|no|num(ero)?)$|lot_?number/.test(h)],
+  ["r", "Réf. à 6 chiffres", h => /idlot|^ref|reference|code.?barre|barcode|6 ?chiffres/.test(h)],
+  ["u", "Format (B9, A…)", h => /format|unite|unit|contenant|emballage|pack|^type/.test(h) && !/nombre|nb|qte|quantite|qty/.test(h)],
+  ["q", "Nombre de contenants", h => /qte|quantite|qty|nombre|^nb|count/.test(h)],
+  ["d", "Description", h => /desc|designation|libelle|intitule|titre|detail|texte|commentaire/.test(h)]];
+function fichierVente(vt) {
+  const st = { rows: null, head: [], nom: "", map: {}, px: "", busy: false };
+  modale(`Fichier des lots · ${vt.nom}`, close => {
+    const zone = el("div", { class: "fv" });
+    const fi = el("input", { type: "file", accept: ".xlsx,.xls,.xlsm,.ods,.csv,.tsv,text/csv", style: "display:none" });
+    const lignes = () => {
+      const out = [], vus = new Set(); let dbl = 0, vide = 0;
+      const col = k => st.map[k] == null || st.map[k] === "" ? -1 : +st.map[k];
+      const c = Object.fromEntries(CHAMPS_FICHIER.map(([k]) => [k, col(k)]));
+      for (const row of st.rows) {
+        let l = String(row[c.l] ?? "").trim().replace(/\s+/g, "").toUpperCase(); if (!l) { vide++; continue; }
+        if (st.px && /^\d{1,3}[A-Z]?$/.test(l)) l = st.px.trim() + l.replace(/^(\d+)/, d => d.padStart(3, "0"));
+        if (vus.has(l)) { dbl++; continue; } vus.add(l);
+        let u = c.u >= 0 ? String(row[c.u] ?? "").trim().toUpperCase() : "", q = c.q >= 0 ? parseInt(String(row[c.q] ?? "").replace(/\D+/g, ""), 10) || 0 : 0;
+        const mx = /^([A-Z]+\s*\d*)\s*[X×*]\s*(\d+)$/.exec(u); if (mx) { u = mx[1].replace(/\s+/g, ""); if (!q) q = +mx[2]; }
+        const x = { l }; const ref = c.r >= 0 ? String(row[c.r] ?? "").trim() : ""; if (ref) x.r = ref; if (u) x.u = u; if (q) x.q = q;
+        const d = c.d >= 0 ? String(row[c.d] ?? "").replace(/\s+/g, " ").trim().slice(0, 200) : ""; if (d) x.d = d;
+        out.push(x);
+      }
+      return { out, dbl, vide };
+    };
+    const dessiner = () => {
+      const cur = vt.catalogue;
+      const etat = cur ? el("p", { class: "vmeta", text: `Fichier actuel : ${cur.nom || "sans nom"} · ${cur.n} lot${cur.n > 1 ? "s" : ""} · importé le ${fDT(cur.t)}` })
+        : el("p", { class: "vmeta", text: "Aucun fichier pour cette vente : les visites s'appuient sur les lots rangés dans le jumeau." });
+      const aide = el("p", { class: "hint", text: "Une ligne par lot, avec au moins le n° de lot. Les visites de cette vente proposeront ces lots (format, nombre de contenants, réf.), et le bouton Plan situe ceux qui sont rangés dans le jumeau." });
+      const choisir = el("button", { class: "btn primary", type: "button", text: cur ? "Remplacer par un autre fichier…" : "Choisir le fichier Excel…", onclick: () => fi.click() });
+      const parts = [etat, aide, el("div", { class: "vacts" }, choisir, cur && !st.rows ? el("button", { class: "btn danger", type: "button", text: "Retirer le fichier", onclick: retirer }) : null)];
+      if (st.rows) {
+        const sel = (k, lab) => { const s = el("select", { "aria-label": lab }, el("option", { value: "", text: "— aucune —" }), st.head.map((h, i) => el("option", { value: String(i), text: `${String.fromCharCode(65 + (i % 26))}${i >= 26 ? Math.floor(i / 26) : ""} · ${h || "(sans titre)"}` })));
+          s.value = st.map[k] ?? ""; s.addEventListener("change", () => { st.map[k] = s.value; dessiner(); }); return el("label", {}, lab, s); };
+        const pxI = el("input", { type: "text", inputmode: "numeric", value: st.px, placeholder: "ex. 40", style: "width:90px" });
+        pxI.addEventListener("change", () => { st.px = pxI.value.replace(/\D/g, "").slice(0, 3); dessiner(); });
+        const r = st.map.l !== "" && st.map.l != null ? lignes() : { out: [], dbl: 0, vide: 0 };
+        const ap = r.out.slice(0, 5);
+        parts.push(el("div", { class: "vcard" }, el("b", { text: `${st.nom} · ${st.rows.length} ligne${st.rows.length > 1 ? "s" : ""}` }),
+          el("div", { class: "vform" }, CHAMPS_FICHIER.map(([k, lab]) => sel(k, lab)),
+            el("label", {}, "Numéro des milliers à ajouter (si le fichier ne donne que les 3 derniers chiffres)", pxI)),
+          ap.length ? el("div", { class: "vtable-wrap" }, el("table", { class: "vtable fv-ap" }, el("thead", {}, el("tr", {}, ["Lot", "Réf.", "Format", "Description"].map(h => el("th", { text: h })))),
+            el("tbody", {}, ap.map(x => el("tr", {}, el("td", { text: x.l }), el("td", { text: x.r || "" }), el("td", { text: fmtFormat({ unite: x.u, qte: x.q }) }), el("td", { text: x.d || "" })))))) : el("p", { class: "hint", text: "Choisissez la colonne du n° de lot." }),
+          el("p", { class: "vmeta", text: `${r.out.length} lot${r.out.length > 1 ? "s" : ""} reconnu${r.out.length > 1 ? "s" : ""}${r.dbl ? ` · ${r.dbl} doublon${r.dbl > 1 ? "s" : ""} ignoré${r.dbl > 1 ? "s" : ""}` : ""}${r.vide ? ` · ${r.vide} ligne${r.vide > 1 ? "s" : ""} sans n° ignorée${r.vide > 1 ? "s" : ""}` : ""}` }),
+          el("div", { class: "vacts" }, el("button", { class: "btn primary big", type: "button", disabled: !r.out.length || st.busy, text: st.busy ? "Enregistrement…" : `Enregistrer ${r.out.length} lot${r.out.length > 1 ? "s" : ""} pour cette vente`, onclick: () => enregistrer(r.out) }),
+            el("button", { class: "btn big", type: "button", text: "Annuler", onclick: () => { st.rows = null; dessiner(); } }))));
+      }
+      zone.replaceChildren(...parts);
+    };
+    fi.addEventListener("change", async () => {
+      const f = fi.files[0]; fi.value = ""; if (!f) return;
+      try {
+        let rows;
+        if (/\.(xlsx|xlsm|xls|ods)$/i.test(f.name)) {
+          if (!window.XLSX) throw new Error("Le lecteur Excel n'a pas pu se charger. Rechargez la page.");
+          const wb = window.XLSX.read(await f.arrayBuffer(), { type: "array" });
+          rows = window.XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: false, defval: "" });
+        } else { const t = await f.text(), sep = /\t/.test(t.split("\n")[0]) ? "\t" : ";"; rows = t.split(/\r?\n/).map(l => l.split(sep).map(c => c.replace(/^"|"$/g, ""))); }
+        rows = rows.filter(r => r && r.some(c => String(c ?? "").trim() !== ""));
+        if (!rows.length) throw new Error("Le fichier est vide.");
+        // Ligne d'en-tête : la 1re ligne qui contient du texte (pas seulement des numéros)
+        // (on prend celle qui a le plus de cellules de texte : une ligne de titre au-dessus est ignorée)
+        const nbTxt = r => r.filter(c => /[a-zA-Zé]{2,}/.test(String(c)) && !/^\d+[A-Z]?$/.test(String(c).trim())).length;
+        const sc = rows.slice(0, 10).map(nbTxt), best = Math.max(...sc);
+        const titre = best > 0, hi = titre ? sc.findIndex(x => x === best) : 0;
+        const w = Math.max(...rows.map(r => r.length));
+        st.head = titre ? [...Array(w)].map((_, i) => String(rows[hi][i] ?? "").trim()) : [...Array(w)].map((_, i) => "Colonne " + (i + 1));
+        st.rows = titre ? rows.slice(hi + 1) : rows; st.nom = f.name; st.map = {};
+        const hn = st.head.map(h => norm(h).trim());
+        for (const [k, , test] of CHAMPS_FICHIER) { const i = hn.findIndex((h, j) => h && test(h) && !Object.values(st.map).includes(String(j))); if (i >= 0) st.map[k] = String(i); }
+        if (st.map.l == null) { const i = hn.findIndex((h, j) => /lot/.test(h) && !Object.values(st.map).includes(String(j))); st.map.l = String(i >= 0 ? i : 0); }
+        const ex = st.rows.slice(0, 50).map(r => String(r[+st.map.l] ?? "").trim()).filter(Boolean);
+        if ((vt.type || "collection") === "collection" && ex.length && ex.every(x => /^\d{1,3}[A-Z]?$/i.test(x))) st.px = "40";
+        dessiner();
+      } catch (e) { toast(e.message || "Lecture du fichier impossible.", true); }
+    });
+    async function enregistrer(lots) {
+      st.busy = true; dessiner();
+      try {
+        const T_ = 1500, parts = Math.max(1, Math.ceil(lots.length / T_)), t = new Date().toISOString();
+        for (let k = 0; k < parts; k++) await lotsDoc(vt.id, k).set({ vente: vt.id, t, lots: lots.slice(k * T_, (k + 1) * T_) });
+        const avant = vt.catalogue?.parts || 0;
+        for (let k = parts; k < avant; k++) await lotsDoc(vt.id, k).delete();
+        const catalogue = { nom: st.nom, n: lots.length, parts, t };
+        await majVente(vt.id, { catalogue }); vt.catalogue = catalogue; V.ventes.set(vt.id, { ...V.ventes.get(vt.id), catalogue });
+        toast(`${lots.length} lots enregistrés pour « ${vt.nom} »`); close(); render();
+      } catch (_) { st.busy = false; dessiner(); toast("Enregistrement impossible. Vérifiez la connexion.", true); }
+    }
+    let armRet = false;
+    async function retirer(e) {
+      if (!armRet) { armRet = true; e.target.textContent = "Confirmer : retirer le fichier"; e.target.classList.add("armed"); return; }
+      try {
+        for (let k = 0; k < (vt.catalogue?.parts || 1); k++) await lotsDoc(vt.id, k).delete();
+        await majVente(vt.id, { catalogue: firebase.firestore.FieldValue.delete() }); delete vt.catalogue; V.cats.delete(vt.id);
+        const x = V.ventes.get(vt.id); if (x) delete x.catalogue;
+        toast("Fichier retiré : les visites s'appuient de nouveau sur le jumeau."); close(); render();
+      } catch (_) { toast("Suppression impossible. Vérifiez la connexion.", true); }
+    }
+    dessiner();
+    return [fi, zone];
+  });
+}
 function formVente(close, ok, init = {}) {
   const nom = el("input", { id: "vt-nom", placeholder: "ex. Vente Collections Décembre 2026", maxlength: 80 }); nom.value = init.nom || "";
   const date = el("input", { id: "vt-date", type: "date" }); date.value = init.date || "";
@@ -2227,7 +2361,7 @@ function recapLigne(l, e, client) {
     el("div", { class: "note-txt", text: "« " + l.note + " »" }));
 }
 async function exportNotes(vs, nom) {
-  const cat = catalog(), q = s => '"' + String(s ?? "").replace(/"/g, '""') + '"';
+  const cat = catalogFor(vs[0]), q = s => '"' + String(s ?? "").replace(/"/g, '""') + '"';
   const lignes = [["Client", "Date de visite", "N° de lot", "Réf.", "Annotation", "Vu à", "Revu (nombre)", "Heures des passages"].map(q).join(";")];
   for (const v of vs) for (const l of (v.lots || []).filter(l => l.note).sort(ordreLot)) {
     const e = info(cat, l.lot);
@@ -2239,7 +2373,7 @@ async function exportNotes(vs, nom) {
 }
 /* ---- Historique des lots d'une vente : quels clients ont demandé / vu chaque lot, quand, et qui l'a coché ---- */
 function histLots(vt, vs) {
-  const cat = catalog(), par = new Map(); // lot -> [{v, l, qui}]
+  const cat = catalogFor({ vente: vt.id }), par = new Map(); // lot -> [{v, l, qui}]
   for (const v of vs) for (const l of v.lots || []) {
     const h = (v.historique || []).filter(x => x.lot === l.lot && x.action === "vu");
     const qui = h.length ? h[h.length - 1].par : null;
@@ -2296,7 +2430,7 @@ function histLots(vt, vs) {
 }
 
 function recapVente(titre, vs) {
-  const cat = catalog(), avec = vs.filter(v => (v.lots || []).some(l => l.note)).sort(ordreRang);
+  const cat = catalogFor(vs[0]), avec = vs.filter(v => (v.lots || []).some(l => l.note)).sort(ordreRang);
   const n = avec.reduce((s, v) => s + v.lots.filter(l => l.note).length, 0);
   modale(`Lots annotés · ${titre}`, close => [
     el("span", { class: "vmeta", text: n ? `${n} annotation${n > 1 ? "s" : ""} dans ${avec.length} visite${avec.length > 1 ? "s" : ""}` : "Aucune annotation dans ces visites." }),
@@ -2361,6 +2495,7 @@ function listView() {
     out.push(el("div", { class: "vcard vente-tete" },
       el("div", {}, el("div", { class: "eyebrow", text: libEtat[etatVente(vt)] }), el("b", { class: "vente-nom", text: vt.nom }), el("div", { class: "vmeta", text: libType(vt) + " · " + (vt.date ? "le " + fDate(vt.date) + " · " : "") + `${nbV(vt.id)} visite${nbV(vt.id) > 1 ? "s" : ""}` })),
       el("div", { class: "vacts" },
+        el("button", { class: "btn small" + (vt.catalogue ? " on" : ""), text: vt.catalogue ? `Fichier des lots (${vt.catalogue.n})` : "Importer le fichier des lots", onclick: () => fichierVente(vt) }),
         el("button", { class: "btn small", text: "Historique des lots", onclick: () => histLots(vt, tout.filter(v => v.vente === vt.id)) }),
         el("button", { class: "btn small", text: "Lots annotés", onclick: () => recapVente(vt.nom, tout.filter(v => v.vente === vt.id)) }),
         el("button", { class: "btn small", text: "Modifier", onclick: () => modale("Modifier la vente", close => [formVente(close, async (n, d, ty) => majVente(vt.id, { nom: n, date: d, type: ty }), vt)]) }),
@@ -2445,7 +2580,7 @@ function newForm() {
     e.preventDefault();
     if (!F.nom.trim()) { toast("Indiquez le nom du client.", true); $("#vf-nom")?.focus(); return; }
     if (F.type === "collection" && !/^\d{1,3}$/.test(F.prefixe.trim())) { toast("Indiquez le numéro des milliers de la vente (par ex. 40).", true); return; }
-    const cat0 = catalog(), coll0 = F.type === "collection", r0 = parseLots(F.lots.text, coll0, F.prefixe.trim(), cat0, []);
+    const cat0 = catalogFor({ vente: F.vente }), coll0 = F.type === "collection", r0 = parseLots(F.lots.text, coll0, F.prefixe.trim(), cat0, []);
     if (!r0.added.length) { toast("Indiquez les lots que le client souhaite voir (saisie ou fichier).", true); $("#vf-paste")?.focus(); return; }
     const t0 = new Date().toISOString();
     const data = { typeVente: F.type, prefixe: F.type === "collection" ? F.prefixe.trim() : "", nom: F.nom.trim(), prenom: F.prenom.trim(), date: F.date || today(), heure: F.heure || nowHM(), collab: F.collab.trim(), commentaires: F.com.trim(), vente: F.vente && V.ventes.has(F.vente) ? F.vente : null, observations: "", statut: "en_cours", creee: new Date().toISOString(), creePar: T.uid || null, lots: r0.added.map(x => ({ lot: x, ajoute: t0, vu: null })), historique: [{ t: t0, action: "creation", lot: null, par: T.uid || null }, ...r0.added.map(x => ({ t: t0, action: "ajout", lot: x, par: T.uid || null, ...(cat0.has(x) ? {} : { horsBase: true }) }))], signatures: {} };
@@ -2461,13 +2596,13 @@ function newForm() {
       inp("Collaborateur accompagnant (facultatif)", "collab", "text", true),
       inp("Commentaires", "com", "textarea", true)),
     el("div", { class: "eyebrow", text: "Lots que le client souhaite voir *" }),
-    lotsInput(F.lots, F.type === "collection", (F.prefixe || "40").trim(), catalog(), [], "vf"),
+    lotsInput(F.lots, F.type === "collection", (F.prefixe || "40").trim(), catalogFor({ vente: F.vente }), [], "vf"),
     el("div", { class: "vacts" }, el("button", { class: "btn primary big", type: "submit", text: "Créer la visite" }),
       el("button", { class: "btn big", type: "button", text: "Annuler", onclick: () => { V.form = null; render(); } })));
 }
 
 function detail(v) {
-  const out = [], cat = catalog(), lots = v.lots || [], n = lots.length, vu = lots.filter(l => l.vu).length;
+  const out = [], cat = catalogFor(v), lots = v.lots || [], n = lots.length, vu = lots.filter(l => l.vu).length;
   const pct = n ? Math.round(vu / n * 100) : 0, done = v.statut === "terminee";
   out.push(el("div", { class: "vhead" },
     el("h2", { text: `${v.prenom || ""} ${v.nom || ""}`.trim() }),
@@ -2546,7 +2681,7 @@ function detail(v) {
     tb.append(el("tr", { class: (seen ? "seen" : "") + (l.note ? " noted" : "") },
       el("td", { class: "c-ck" }, ck),
       el("td", { class: "c-lot" }, el("div", { class: "lotno", text: l.lot }), e.idlot ? el("div", { class: "sub", text: "Réf. " + e.idlot }) : null, l.note && V.noteEdit !== l.lot ? el("div", { class: "note-txt", text: "« " + l.note + " »" }) : null),
-      el("td", { class: "c-fmt" }, el("div", { class: "loc-cell" }, el("b", { class: "fmt", text: fmtFormat(e) }), boutonPlan(l.lot))),
+      el("td", { class: "c-fmt" }, el("div", { class: "loc-cell" }, el("b", { class: "fmt", text: fmtFormat(e) }), boutonPlan(l.lot, e.plan !== false))),
       el("td", { class: "time c-time" }, ...heures),
       el("td", { class: "c-acts" }, el("div", { class: "lot-acts" }, el("span", { class: seen ? "stat-vu" : "stat-ap", text: seen ? "Vu" : "À présenter" }), btnRevu, annuleRevu)),
       el("td", { class: "c-note" }, btnNote),
@@ -2632,14 +2767,14 @@ function addBox(v, cat) {
   const inVisit = new Set((v.lots || []).map(l => l.lot));
   const q = norm(V.addQ.trim());
   const all = [...cat.values()].sort((a, b) => a.lot.localeCompare(b.lot, "fr", { numeric: true }));
-  const res = all.filter(e => !q || norm(e.lot).includes(q) || norm(e.idlot).includes(q) || norm(e.unite) === q || norm(e.locs.join(" ")).includes(q));
+  const res = all.filter(e => !q || norm(e.lot).includes(q) || norm(e.idlot).includes(q) || norm(e.unite) === q || norm(e.locs.join(" ")).includes(q) || (q.length > 2 && norm(e.desc).includes(q)));
   const search = el("input", { id: "va-q", type: "search", placeholder: "N° de lot, réf. à 6 chiffres, format (B8, A…) ou emplacement (A18, R12…)", value: V.addQ });
   search.addEventListener("input", () => { V.addQ = search.value; render(); });
   const list = el("div", { class: "addlist" }, res.map(e => {
     const already = inVisit.has(e.lot);
     const cb = el("input", { type: "checkbox", checked: already || V.addSel.has(e.lot), disabled: already });
     cb.addEventListener("change", () => { cb.checked ? V.addSel.add(e.lot) : V.addSel.delete(e.lot); render(); });
-    return el("label", {}, cb, el("strong", { text: e.lot }), el("span", { class: "vmeta", text: `${fmtFormat(e)} · ${e.locs.join(" + ")}` }), already ? el("span", { class: "in", text: "déjà dans la visite" }) : null);
+    return el("label", {}, cb, el("strong", { text: e.lot }), el("span", { class: "vmeta", text: `${fmtFormat(e)} · ${e.locs.join(" + ")}${e.desc ? " · " + e.desc : ""}` }), already ? el("span", { class: "in", text: "déjà dans la visite" }) : null);
   }));
   const addable = res.filter(e => !inVisit.has(e.lot));
   // Saisie par numéros (tapés, collés ou lus dans un fichier)
@@ -2684,12 +2819,12 @@ function parseLots(text, coll, px, cat, existing) {
     if (!cat.has(lot)) unknown.push(lot);
     added.push(lot);
   }
-  return { added, dup, unknown };
+  return { added, dup, unknown, fichier: !!cat.fichier };
 }
 const lotsMsg = r => {
   let m = `${r.added.length} lot${r.added.length > 1 ? "s" : ""}`;
   if (r.dup.length) m += ` · ${r.dup.length} doublon${r.dup.length > 1 ? "s" : ""} ignoré${r.dup.length > 1 ? "s" : ""}`;
-  if (r.unknown.length) m += ` · non rangé${r.unknown.length > 1 ? "s" : ""} dans le jumeau : ${r.unknown.join(", ")}`;
+  if (r.unknown.length) m += r.fichier ? ` · absent${r.unknown.length > 1 ? "s" : ""} du fichier de la vente : ${r.unknown.join(", ")}` : ` · non rangé${r.unknown.length > 1 ? "s" : ""} dans le jumeau : ${r.unknown.join(", ")}`;
   return m;
 };
 /* Lecture d'un fichier : .txt, .csv, .xlsx/.xls. Dans un tableau, on prend la colonne « lot » (pas « idlot ») si elle existe, sinon la 1re colonne. */
@@ -2774,7 +2909,7 @@ function sigPad(v, key, lab) {
 /* ---- Compte rendu PDF ---- */
 async function exportPdf(v, jour, numJour, nbJours) {
   if (!window.jspdf || !window.jspdf.jsPDF) { toast("Le module PDF n'a pas pu se charger. Rechargez la page.", true); return; }
-  const cat = catalog();
+  const cat = catalogFor(v);
   const seen = (jour ? lotsDuJour(v, jour).map(l => ({ ...l, vu: l.tJour })) : (v.lots || []).filter(l => l.vu)).sort(ordreLot);
   const client = `${v.prenom || ""} ${v.nom || ""}`.trim();
   const doc = new window.jspdf.jsPDF({ unit: "mm", format: "a4" });
