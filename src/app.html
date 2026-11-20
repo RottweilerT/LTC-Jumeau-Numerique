@@ -324,6 +324,38 @@ h3{margin:0 0 8px;font-family:var(--f-display);font-size:17px;font-weight:600;le
 .vventes.sous .vchip{font-size:13px;padding:6px 12px}
 .vchip.add{border-style:dashed;color:var(--muted);font-weight:500}
 .vente-tete{flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:space-between}
+.impr-p{display:inline-block;margin-left:6px;font-size:12px;font-weight:600;padding:2px 8px;border-radius:999px;border:1px solid}
+.impr-jamais{color:#5B646E;border-color:#B9C0C8;background:#EEF0F3}
+.impr-ajour{color:#1E6B3F;border-color:#7FC19A;background:#E3F3E9}
+.impr-reimp{color:#9A4B07;border-color:#F0A35E;background:#FDEBD8}
+.impr-bloc details summary{cursor:pointer;font-size:14px;margin-top:6px}
+.impr-hist{display:flex;flex-direction:column;gap:2px;margin-top:6px;font-size:13px}
+.impr-hist>div{display:grid;grid-template-columns:130px 1fr 40px;gap:8px;padding:3px 0;border-bottom:1px solid var(--line)}
+.impr-hist>div.ok{color:var(--ok)}
+.impr-apercu{width:100%;height:55vh;border:1px solid var(--line);border-radius:8px;background:#fff}
+.impr-conf{display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--line);padding-top:10px}
+.impr-part{display:flex;flex-direction:column;gap:4px;max-height:30vh;overflow:auto}
+.impr-part label{display:flex;gap:8px;align-items:center}
+.centre-impr .box{width:min(980px,100%);max-height:94vh;overflow:auto}
+.impr-cpts{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px}
+.impr-cpt{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface);cursor:pointer;text-align:left;color:var(--ink)}
+.impr-cpt b{font-size:22px;font-family:var(--f-display)}
+.impr-cpt span{font-size:13px;color:var(--muted)}
+.impr-cpt.impr-jamais b{color:#5B646E}.impr-cpt.impr-ajour b{color:#1E6B3F}.impr-cpt.impr-reimp b{color:#C0640F}
+.impr-cpt.on{outline:3px solid var(--accent);outline-offset:-1px}
+.impr-filtres{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.impr-filtres select,.impr-filtres input{padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink);font-size:14px}
+.impr-filtres label{display:flex;gap:6px;align-items:center;font-size:14px}
+.impr-filtres input[type=search]{flex:1;min-width:180px}
+.impr-sel{position:sticky;top:-16px;background:var(--surface);padding:8px 0;z-index:1;border-bottom:1px solid var(--line)}
+.impr-liste{display:flex;flex-direction:column}
+.impr-l{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;padding:9px 6px;border-bottom:1px solid var(--line);cursor:pointer}
+.impr-l.on{background:color-mix(in srgb,var(--accent) 9%,transparent)}
+.impr-l input{width:20px;height:20px}
+.impr-nom{display:flex;flex-direction:column;gap:2px;min-width:0}
+.impr-attente{border:1px solid #F0A35E;border-radius:10px;padding:6px 10px;background:#FDF5EC}
+.impr-attente summary{cursor:pointer;font-weight:600}
+.impr-recap{margin:0;padding-left:20px}
 .vt-types{display:flex;flex-wrap:wrap;gap:8px 18px;border:1px solid var(--line);border-radius:10px;padding:8px 12px;margin:0}
 .vt-types legend{padding:0 4px;font-size:14px}
 .vform .vt-type{display:flex;align-items:center;gap:8px;font-size:15px;color:var(--ink);cursor:pointer;flex-direction:row}
@@ -1746,8 +1778,11 @@ const fT = iso => iso ? new Date(iso).toLocaleTimeString("fr-FR", { hour: "2-dig
 const norm = s => String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
 
 /* ---- Catalogue des lots, lu dans la base existante ---- */
+let catMemo = null;
 function catalog() {
-  const S = T.S, m = new Map();
+  const S = T.S;
+  if (catMemo && catMemo.items === S.items && catMemo.racks === S.racks) return catMemo.m; // recalculé seulement si les lots ou emplacements changent
+  const m = new Map(); catMemo = { items: S.items, racks: S.racks, m };
   for (const it of S.items.values()) {
     const r = S.racks.get(it.rackId);
     if (it.lotDe != null && it.lotA != null && +it.lotA >= +it.lotDe && +it.lotA - +it.lotDe <= 20000) { // caisse couvrant une plage de lots
@@ -1781,10 +1816,12 @@ function catVente(id) {
   }
   return null;
 }
+const catForMemo = new Map();
 function catalogFor(v) {
   const base = catalog(), sm = v && v.vente ? catVente(v.vente) : null;
   if (!sm) return base;
-  const m = new Map();
+  const mm = catForMemo.get(v.vente); if (mm && mm.base === base && mm.sm === sm) return mm.m;
+  const m = new Map(); catForMemo.set(v.vente, { base, sm, m });
   for (const x of sm.values()) { const b = base.get(x.l); m.set(x.l, { lot: x.l, idlot: x.r || b?.idlot || "", unite: x.u || b?.unite || "", qte: +x.q || b?.qte || 0, desc: x.d || "", locs: b ? b.locs : ["Pas encore placé sur le plan"], plan: !!b }); }
   m.fichier = true; m.base = base; return m;
 }
@@ -1809,6 +1846,7 @@ function start() {
     if (V.venteSel && V.venteSel !== "sans_vente" && !V.ventes.has(V.venteSel)) V.venteSel = "";
     render();
   }, () => {});
+  T.db.doc("config/impressions").onSnapshot(s => { V.imprLots = (s.exists && s.data().lots) || {}; render(); }, () => {});
   T.db.collection("visites").onSnapshot(s => {
     V.list = new Map(s.docs.map(d => [d.id, { id: d.id, ...d.data() }])); V.loaded = true;
     const avant = V.open.length; V.open = V.open.filter(id => V.list.has(id)); if (V.open.length !== avant) saveOpen();
@@ -2336,6 +2374,8 @@ function recapVente(titre, vs) {
 
 /* ---- Rendu ---- */
 function render() {
+  cacheEmp = new WeakMap();
+  if (T.offImpr) { if (document.querySelector(".centre-impr")) T.offImpr(); else T.offImpr = null; }
   if (V.mode !== "visites") return;
   const root = $("#visits");
   const a = document.activeElement;
@@ -2392,6 +2432,7 @@ function listView() {
       el("div", { class: "vacts" },
         el("button", { class: "btn small" + (vt.catalogue ? " on" : ""), text: vt.catalogue ? `Fichier des lots (${vt.catalogue.n})` : "Importer le fichier des lots", onclick: () => fichierVente(vt) }),
         el("button", { class: "btn small", text: "Historique des lots", onclick: () => histLots(vt, tout.filter(v => v.vente === vt.id)) }),
+        el("button", { class: "btn small", text: "Centre d'impression", onclick: () => centreImpression(vt.id) }),
         el("button", { class: "btn small", text: "Lots annotés", onclick: () => recapVente(vt.nom, tout.filter(v => v.vente === vt.id)) }),
         el("button", { class: "btn small", text: "Modifier", onclick: () => modale("Modifier la vente", close => [formVente(close, async (n, d, ty) => majVente(vt.id, { nom: n, date: d, type: ty }), vt)]) }),
         el("button", { class: "btn small danger" + (armedV ? " armed" : ""), text: armedV ? "Confirmer : supprimer la vente" : "Supprimer la vente", title: "Les visites ne sont pas supprimées : elles vont dans « Visites sans vente ».", onclick: async () => {
@@ -2421,7 +2462,7 @@ function listView() {
     } });
     const rk = rang(v), vte = V.ventes.get(v.vente);
     const card = el("div", { class: "vitem", role: "button", tabindex: 0, onclick: open, onkeydown: e => { if ((e.key === "Enter" || e.key === " ") && e.target === e.currentTarget) { e.preventDefault(); open(); } } },
-      el("div", {}, el("span", { class: "chip-s " + (v.statut === "terminee" ? "done" : "live"), text: v.statut === "terminee" ? "Terminée" : "En cours" }), V.open.includes(v.id) ? el("span", { class: "chip-s open", text: "Onglet ouvert" }) : null),
+      el("div", {}, el("span", { class: "chip-s " + (v.statut === "terminee" ? "done" : "live"), text: v.statut === "terminee" ? "Terminée" : "En cours" }), pastilleImpr(v, true), V.open.includes(v.id) ? el("span", { class: "chip-s open", text: "Onglet ouvert" }) : null),
       el("b", {}, rk ? el("span", { class: "rang", text: "N° " + rk }) : null, nomClient(v)),
       el("div", { class: "vmeta", text: `${fDate(v.date)} à ${v.heure || "—"}${v.collab ? " · avec " + v.collab : ""}` }),
       el("div", { class: "vmeta", text: `${vu} lot${vu > 1 ? "s" : ""} présenté${vu > 1 ? "s" : ""} sur ${n}` }),
@@ -2642,6 +2683,7 @@ function detail(v) {
   out.push(el("div", { class: "vcard" }, el("div", { class: "eyebrow", text: "Signatures (facultatives, sinon à la main sur le document imprimé)" }),
     jrs.length ? el("div", { class: "sigrow" }, jrs.map((j, i) => { const k = sg["client_" + j] ? "client_" + j : (sg.client && jourDe(sg.client.t) === j ? "client" : "client_" + j); return sigBox(k, `Signature du client · ${jrs.length > 1 ? "jour " + (i + 1) + " · " : ""}${fDate(j)}`); })) : el("p", { class: "hint", text: "La signature se fait pour chaque journée où des lots ont été présentés." })));
 
+  out.push(blocImpression(v));
   // Actions finales
   out.push(el("div", { class: "vacts" },
     el("button", { class: "btn big danger" + (V.delArm === v.id ? " armed" : ""), text: V.delArm === v.id ? "Confirmer : supprimer définitivement" : "Supprimer la visite", onclick: async () => {
@@ -2807,21 +2849,32 @@ function sigPad(v, key, lab) {
 }
 
 /* ---- Compte rendu PDF ---- */
-async function exportPdf(v, jour, numJour, nbJours) {
-  if (!window.jspdf || !window.jspdf.jsPDF) { toast("Le module PDF n'a pas pu se charger. Rechargez la page.", true); return; }
+// Fond du formulaire « Le Timbre Classique » : en-tête et pied de page scannés (fichiers du site), chargés une fois
+const imgPdf = async src => { try { const r = await fetch(src); if (!r.ok) return null; const bl = await r.blob(); return await new Promise(res => { const f = new FileReader(); f.onload = () => res(f.result); f.onerror = () => res(null); f.readAsDataURL(bl); }); } catch (_) { return null; } };
+let fondsPdf = null;
+const fondsFiche = async () => { const f = fondsPdf || await Promise.all([imgPdf("entete.png"), imgPdf("pied.png")]); if (f[0] && f[1]) fondsPdf = f; return f; };
+/* Contenu imprimable d'une fiche (compte rendu) : sert à la fois au dessin du PDF et à son empreinte */
+function donneesFiche(v, jour) {
   const cat = catalogFor(v);
   const seen = (jour ? lotsDuJour(v, jour).map(l => ({ ...l, vu: l.tJour })) : (v.lots || []).filter(l => l.vu)).sort(ordreLot);
-  const client = `${v.prenom || ""} ${v.nom || ""}`.trim();
-  const doc = new window.jspdf.jsPDF({ unit: "mm", format: "a4" });
+  const sameDay = l => new Date(l.vu).toLocaleDateString("sv-SE") === (jour || v.date);
+  const tousJour = seen.every(sameDay);
+  const hm = iso => new Date(iso).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+  const jm = iso => new Date(iso).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" });
+  const rows = seen.map(l => { const e = info(cat, l.lot); return [l.lot, e.idlot ? String(e.idlot) : "—", e.qte ? String(e.qte) : "—", e.unite || "—", (sameDay(l) ? hm(l.vu) : jm(l.vu) + " " + hm(l.vu)) + (l.revuDuJour ? " revu" : "")]; });
+  const sg = v.signatures || {}; let sig = null;
+  if (jour) sig = sigDuJour(v, jour) || null;
+  else { const ks = Object.keys(sg).filter(k => k.startsWith("client")).sort((a, b) => String(sg[b].t).localeCompare(String(sg[a].t))); if (ks.length) sig = sg[ks[0]]; }
+  return { seen, rows, tousJour, sig };
+}
+/* Dessine une fiche à la suite du document (sur la page courante, déjà vide) ; ses pages sont numérotées à part */
+function dessinerFiche(doc, v, jour, numJour, nbJours, ent, pied) {
+  const { seen, rows, tousJour, sig } = donneesFiche(v, jour);
+  const p0 = doc.getNumberOfPages();
   const W = 210, M = 12;
-  // Fond du formulaire « Le Timbre Classique » : en-tête et pied de page scannés (fichiers du site)
-  const img = async src => { try { const r = await fetch(src); if (!r.ok) return null; const bl = await r.blob(); return await new Promise(res => { const f = new FileReader(); f.onload = () => res(f.result); f.onerror = () => res(null); f.readAsDataURL(bl); }); } catch (_) { return null; } };
-  const [ent, pied] = await Promise.all([img("entete.png"), img("pied.png")]);
   const MOIS = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"];
   const souligne = (t, x, y) => { doc.text(t, x, y); doc.setLineWidth(.3); doc.line(x, y + .9, x + doc.getTextWidth(t), y + .9); };
-  const sg = { ...(v.signatures || {}) };
-  if (jour) sg.client = sigDuJour(v, jour) || undefined;
-  else { const ks = Object.keys(sg).filter(k => k.startsWith("client")).sort((a, b) => String(sg[b].t).localeCompare(String(sg[a].t))); if (ks.length) sg.client = sg[ks[0]]; }
+  const sg = { client: sig || undefined };
   const sd = sg.client?.t;
 
   // ---- Page 1 : le formulaire ----
@@ -2864,11 +2917,6 @@ async function exportPdf(v, jour, numJour, nbJours) {
   doc.setFont("helvetica", "bold"); doc.setFontSize(10.5);
   doc.text(jour ? `Lots présentés le ${fDate(jour)} : ${seen.length}${nbJours > 1 ? `   (jour ${numJour} sur ${nbJours})` : ""}` : `Lots présentés : ${seen.length}`, M + 3, 104);
   const TOP1 = 107, BOT1 = 270, TOP = 14, BOT = 286;
-  const sameDay = l => new Date(l.vu).toLocaleDateString("sv-SE") === (jour || v.date);
-  const tousJour = seen.every(sameDay);
-  const hm = iso => new Date(iso).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
-  const jm = iso => new Date(iso).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" });
-  const rows = seen.map(l => { const e = info(cat, l.lot); return [l.lot, e.idlot ? String(e.idlot) : "—", e.qte ? String(e.qte) : "—", e.unite || "—", (sameDay(l) ? hm(l.vu) : jm(l.vu) + " " + hm(l.vu)) + (l.revuDuJour ? " revu" : "")]; });
   const configs = [];
   for (const [fs, rh] of [[9, 5], [8, 4.4], [7, 3.8], [6.2, 3.3], [5.5, 2.9], [5, 2.6]]) for (const g of [1, 2, 3]) if (!(g === 3 && fs > 8) && !(g === 2 && fs > 9)) configs.push({ fs, rh, g });
   const cap = c => { const hh = c.rh + .6; return c.g * (Math.floor((BOT1 - TOP1 - hh) / c.rh) + Math.floor((BOT - OBS - TOP - hh) / c.rh)); };
@@ -2911,14 +2959,227 @@ async function exportPdf(v, jour, numJour, nbJours) {
     doc.setDrawColor(150); doc.setLineWidth(.3); doc.rect(M, y + 2, W - 2 * M, 19);
     doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.text(doc.splitTextToSize(v.observations, W - 2 * M - 6).slice(0, 4), M + 3, y + 7);
   }
-  const pages = doc.getNumberOfPages();
-  for (let k = 1; k <= pages; k++) { doc.setPage(k); doc.setFont("helvetica", "normal"); doc.setFontSize(7); doc.setTextColor(140); doc.text(`${[v.prenom, v.nom].filter(Boolean).join(" ")} · généré le ${new Date().toLocaleString("fr-FR")} · page ${k}/${pages}`, W - M, 295.5, { align: "right" }); doc.setTextColor(0); }
+  const pages = doc.getNumberOfPages() - p0 + 1;
+  for (let k = 1; k <= pages; k++) { doc.setPage(p0 + k - 1); doc.setFont("helvetica", "normal"); doc.setFontSize(7); doc.setTextColor(140); doc.text(`${[v.prenom, v.nom].filter(Boolean).join(" ")} · généré le ${new Date().toLocaleString("fr-FR")} · page ${k}/${pages}`, W - M, 295.5, { align: "right" }); doc.setTextColor(0); }
+  doc.setPage(doc.getNumberOfPages());
+  return pages;
+}
+async function exportPdf(v, jour, numJour, nbJours) {
+  if (!window.jspdf || !window.jspdf.jsPDF) { toast("Le module PDF n'a pas pu se charger. Rechargez la page.", true); return; }
+  const [ent, pied] = await fondsFiche();
+  const doc = new window.jspdf.jsPDF({ unit: "mm", format: "a4" });
+  dessinerFiche(doc, v, jour, numJour, nbJours, ent, pied);
   const blob = doc.output("blob");
   const fn = `Compte-rendu_${(v.nom || "client").replace(/[^\w\-]+/g, "_")}_${jour || v.date || today()}${jour && nbJours > 1 ? "_jour" + numJour : ""}.pdf`;
   let dl = null; try { dl = await claude.use("downloads"); } catch (_) {}
   if (!dl) { toast("L'enregistrement de fichiers n'est pas disponible dans cette vue.", true); return; }
   try { await dl.save({ filename: fn, data: blob }); patch(v.id, { historique: hist(V.list.get(v.id) || v, "export", null, jour ? { jour } : null) }); toast("Compte rendu enregistré"); }
   catch (e) { if (e?.code !== "declined") toast("Le PDF n'a pas pu être enregistré (" + (e?.code || "erreur") + ").", true); }
+}
+
+/* ================= Impression des fiches clients =================
+   Fiche = compte rendu complet d'une visite (tous les lots vus). Deux états indépendants :
+   statut de la visite (en cours / terminée) et état d'impression (jamais / à jour / à réimprimer).
+   - Empreinte : calculée sur le contenu réellement imprimé (+ version du modèle) ; le statut n'y entre pas.
+   - Lot d'impression : identifiant unique, journal dans config/impressions (généré, demandé, annulé, échec, confirmé).
+   - Confirmation : écrite dans la visite sous impr.<lot> avec l'empreinte figée au moment de la génération
+     (clé = lot : rejouer une confirmation ne crée pas de doublon ; plusieurs postes n'écrivent jamais la même clé). */
+const MODELE_FICHE = "1"; // à augmenter si la mise en page du compte rendu change : les fiches passeront « à réimprimer »
+const hash53 = str => { let h1 = 0xdeadbeef, h2 = 0x41c6ce57; for (let i = 0, ch; i < str.length; i++) { ch = str.charCodeAt(i); h1 = Math.imul(h1 ^ ch, 2654435761); h2 = Math.imul(h2 ^ ch, 1597334677); } h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909); h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909); return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36); };
+let cacheEmp = new WeakMap();
+function empreinteFiche(v) {
+  const c = cacheEmp.get(v); if (c) return c;
+  const h = calcEmpreinte(v); cacheEmp.set(v, h); return h;
+}
+function calcEmpreinte(v) {
+  const { rows, tousJour, sig } = donneesFiche(v, null), vte = V.ventes.get(v.vente);
+  return hash53(JSON.stringify([MODELE_FICHE, v.nom || "", v.prenom || "", vte ? vte.nom : (v.typeVente || "collection"), vte ? vte.date || "" : v.dateVente || "", rang(v) || v.numero || "", v.date || "", sig ? [sig.t, (sig.img || "").length] : null, v.observations || "", tousJour, rows]));
+}
+const imprConfirmees = v => Object.entries(v.impr || {}).map(([lot, x]) => ({ lot, ...x })).sort((a, b) => String(a.t).localeCompare(String(b.t)));
+function etatImpr(v) {
+  const c = imprConfirmees(v); if (!c.length) return "jamais";
+  return c.some(x => x.h === empreinteFiche(v)) ? "ajour" : "reimp"; // à jour si la version actuelle a déjà été imprimée
+}
+const LIB_IMPR = { jamais: "Jamais imprimée", ajour: "Imprimée à jour", reimp: "À réimprimer" };
+const pastilleImpr = (v, court) => { const e = etatImpr(v); return el("span", { class: "impr-p impr-" + e, title: LIB_IMPR[e], text: court ? { jamais: "Non imprimée", ajour: "Imprimée", reimp: "À réimprimer" }[e] : LIB_IMPR[e] }); };
+const lotsImpr = () => V.imprLots || {};
+const majLotImpr = (id, data) => T.db.doc("config/impressions").set({ lots: { [id]: data } }, { merge: true }).catch(() => {});
+const nouveauLotImpr = () => "i" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+
+/* Versions d'une fiche : V1, V2… dans l'ordre où chaque contenu a été imprimé (ou généré) pour la 1re fois */
+function versionsFiche(v) {
+  const ev = [...imprConfirmees(v).map(x => ({ t: x.t, h: x.h })), ...Object.entries(lotsImpr()).filter(([, b]) => b.fiches && b.fiches[v.id]).map(([, b]) => ({ t: b.t, h: b.fiches[v.id] }))].sort((a, b) => String(a.t).localeCompare(String(b.t)));
+  const num = new Map(); for (const e of ev) if (!num.has(e.h)) num.set(e.h, num.size + 1);
+  const cur = empreinteFiche(v); if (!num.has(cur)) num.set(cur, num.size + 1);
+  return { num, cur };
+}
+function blocImpression(v) {
+  const c = imprConfirmees(v), der = c[c.length - 1], { num, cur } = versionsFiche(v);
+  const lignes = [];
+  for (const [id, b] of Object.entries(lotsImpr())) if (b.fiches && b.fiches[v.id]) {
+    const conf = (v.impr || {})[id];
+    lignes.push({ t: b.t, txt: `PDF généré${(b.n || 1) > 1 ? ` (lot de ${b.n} fiches)` : ""}`, ver: num.get(b.fiches[v.id]), qui: b.par });
+    if (b.demande) lignes.push({ t: b.demande, txt: "Impression demandée", ver: num.get(b.fiches[v.id]), qui: b.par });
+    if (conf) lignes.push({ t: conf.t, txt: "Impression confirmée", ver: num.get(conf.h), qui: conf.par, ok: true });
+    else if (b.etat === "annule" || (b.etat === "partiel" && !conf)) lignes.push({ t: b.tf || b.t, txt: "Non imprimée (pas confirmée)", ver: num.get(b.fiches[v.id]) });
+    else if (b.etat === "echec") lignes.push({ t: b.tf || b.t, txt: "Échec de la génération", ver: num.get(b.fiches[v.id]) });
+  }
+  for (const x of c) if (!lotsImpr()[x.lot]) lignes.push({ t: x.t, txt: "Impression confirmée", ver: num.get(x.h), qui: x.par, ok: true });
+  lignes.sort((a, b) => String(b.t).localeCompare(String(a.t)));
+  return el("div", { class: "vcard impr-bloc" },
+    el("div", { class: "vacts" }, el("div", { class: "eyebrow", text: "Impression de la fiche" }), pastilleImpr(v), el("span", { class: "sp" }),
+      el("button", { class: "btn primary", text: "Imprimer la fiche", onclick: () => imprimerFiches([V.list.get(v.id) || v]) })),
+    el("div", { class: "vmeta", text: der ? `Dernière impression confirmée le ${fDT(der.t)} · ${c.length} impression${c.length > 1 ? "s" : ""} confirmée${c.length > 1 ? "s" : ""} · version actuelle V${num.get(cur)}` : `Jamais imprimée · version actuelle V${num.get(cur)}` }),
+    lignes.length ? el("details", {}, el("summary", { text: `Historique des impressions (${lignes.length})` }),
+      el("div", { class: "impr-hist" }, lignes.map(x => el("div", { class: x.ok ? "ok" : "" }, el("span", { text: fDT(x.t) }), el("span", { text: x.txt }), el("b", { text: x.ver ? "V" + x.ver : "" }))))) : null);
+}
+
+/* Génère un PDF unique (une fiche = nouvelle page ; en recto verso, chaque fiche commence sur une nouvelle feuille) */
+async function imprimerFiches(vs, opts = {}) {
+  vs = vs.filter(Boolean);
+  if (!vs.length) return;
+  if (!window.jspdf || !window.jspdf.jsPDF) { toast("Le module PDF n'a pas pu se charger. Rechargez la page.", true); return; }
+  const id = nouveauLotImpr(), t = new Date().toISOString(), par = T.uid || null;
+  const fiches = {}, ordre = [];
+  let url = null;
+  try {
+    const [ent, pied] = await fondsFiche();
+    const doc = new window.jspdf.jsPDF({ unit: "mm", format: "a4" });
+    vs.forEach((v, k) => {
+      fiches[v.id] = empreinteFiche(v); ordre.push(v.id); // instantané figé au moment de la génération
+      if (k) { if (opts.rv && doc.getNumberOfPages() % 2) doc.addPage(); doc.addPage(); }
+      dessinerFiche(doc, v, null, 1, 1, ent, pied);
+    });
+    url = URL.createObjectURL(doc.output("blob"));
+  } catch (e) {
+    majLotImpr(id, { t, par, n: vs.length, fiches, ordre, etat: "echec", tf: new Date().toISOString() });
+    toast("La génération du PDF a échoué : aucune fiche n'est marquée comme imprimée.", true); return;
+  }
+  await majLotImpr(id, { t, par, n: vs.length, fiches, ordre, etat: "genere" });
+  const nomFic = vs.length === 1 ? `Fiche_${(vs[0].nom || "client").replace(/[^\w\-]+/g, "_")}_${today()}.pdf` : `Fiches_${vs.length}_${today()}.pdf`;
+  modale(vs.length === 1 ? `Fiche de ${nomClient(vs[0])}` : `${vs.length} fiches à imprimer`, close => {
+    const demander = () => majLotImpr(id, { etat: "demande", demande: new Date().toISOString() });
+    const frame = el("iframe", { class: "impr-apercu", src: url, title: "Aperçu du PDF" });
+    const imprimer = () => { demander(); try { frame.contentWindow.focus(); frame.contentWindow.print(); } catch (_) { window.open(url, "_blank"); } };
+    const telecharger = async () => { let dl = null; try { dl = await claude.use("downloads"); } catch (_) {} if (!dl) { window.open(url, "_blank"); return; } try { const b = await (await fetch(url)).blob(); await dl.save({ filename: nomFic, data: b }); toast("PDF enregistré (ce n'est pas encore une impression confirmée)"); } catch (e) { if (e?.code !== "declined") toast("Le PDF n'a pas pu être enregistré.", true); } };
+    const fermer = () => { close(); setTimeout(() => URL.revokeObjectURL(url), 60000); };
+    return [
+      el("span", { class: "vmeta", text: "Aperçu : vérifiez la fiche, imprimez-la, puis dites si l'impression s'est bien passée. Ouvrir ou télécharger le PDF ne compte pas comme une impression." }),
+      frame,
+      el("div", { class: "vacts" }, el("button", { class: "btn primary", text: "Imprimer", onclick: imprimer }),
+        el("button", { class: "btn", text: "Ouvrir dans un onglet", onclick: () => { demander(); window.open(url, "_blank"); } }),
+        el("button", { class: "btn", text: "Télécharger le PDF", onclick: telecharger })),
+      questionConfirmation(id, vs.map(v => v.id), fiches, fermer)];
+  });
+}
+/* « L'impression s'est-elle correctement déroulée ? » — tout, une partie ou rien */
+function questionConfirmation(id, ids, fiches, fermer) {
+  const box = el("div", { class: "impr-conf" });
+  const dessiner = (partiel) => {
+    const b = lotsImpr()[id];
+    if (b && (b.etat === "confirme" || b.etat === "partiel" || b.etat === "annule")) { box.replaceChildren(el("p", { class: "vmeta", text: "Ce lot d'impression a déjà reçu sa réponse." }), el("button", { class: "btn", text: "Fermer", onclick: fermer })); return; }
+    if (!partiel) {
+      box.replaceChildren(el("b", { text: "L'impression s'est-elle correctement déroulée ?" }),
+        el("div", { class: "vacts" },
+          el("button", { class: "btn primary", text: ids.length > 1 ? `Tout confirmer (${ids.length})` : "Oui, confirmer", onclick: () => confirmer(ids) }),
+          ids.length > 1 ? el("button", { class: "btn", text: "Confirmer une partie…", onclick: () => dessiner(true) }) : null,
+          el("button", { class: "btn", text: "Ne rien confirmer", onclick: async () => { await majLotImpr(id, { etat: "annule", tf: new Date().toISOString() }); toast("Aucune fiche marquée comme imprimée"); fermer(); render(); } })));
+      return;
+    }
+    const sel = new Set();
+    const nb = el("span", { class: "vmeta", text: "0 fiche cochée" });
+    box.replaceChildren(el("b", { text: "Cochez les fiches réellement imprimées :" }),
+      el("div", { class: "impr-part" }, ids.map(vid => { const v = V.list.get(vid); const cb = el("input", { type: "checkbox" }); cb.addEventListener("change", () => { cb.checked ? sel.add(vid) : sel.delete(vid); nb.textContent = `${sel.size} fiche${sel.size > 1 ? "s" : ""} cochée${sel.size > 1 ? "s" : ""}`; }); return el("label", {}, cb, el("span", { text: v ? `${rang(v) ? "N° " + rang(v) + " · " : ""}${nomClient(v)}` : "(visite supprimée)" })); })),
+      el("div", { class: "vacts" }, nb, el("span", { class: "sp" }), el("button", { class: "btn", text: "Retour", onclick: () => dessiner(false) }), el("button", { class: "btn primary", text: "Confirmer la sélection", onclick: () => sel.size ? confirmer([...sel]) : toast("Cochez au moins une fiche, ou choisissez « Ne rien confirmer ».", true) })));
+  };
+  const confirmer = async liste => {
+    const t = new Date().toISOString(), par = T.uid || null, ok = liste.filter(vid => V.list.has(vid));
+    try {
+      const b = T.db.batch(); // écriture groupée : tout ou rien
+      for (const vid of ok) b.update(vdoc(vid), { ["impr." + id]: { t, par, h: fiches[vid], m: MODELE_FICHE } });
+      await b.commit();
+      for (const vid of ok) { const v = V.list.get(vid); if (v) V.list.set(vid, { ...v, impr: { ...(v.impr || {}), [id]: { t, par, h: fiches[vid], m: MODELE_FICHE } } }); }
+      await majLotImpr(id, { etat: ok.length === ids.length ? "confirme" : "partiel", tf: t, confirmees: ok });
+      toast(`${ok.length} fiche${ok.length > 1 ? "s" : ""} marquée${ok.length > 1 ? "s" : ""} comme imprimée${ok.length > 1 ? "s" : ""}`); fermer(); render();
+    } catch (_) { toast("Confirmation impossible (connexion ?) : rien n'a été enregistré, réessayez.", true); }
+  };
+  dessiner(false);
+  return box;
+}
+
+/* ---- Centre d'impression ---- */
+function centreImpression(venteId) {
+  const st = { vente: venteId || "", statut: "tous", impr: "tous", du: "", au: "", q: "", sel: new Set() };
+  const m = el("div", { class: "modal centre-impr" }), box = el("div", { class: "box" }); m.append(box);
+  const close = () => { m.remove(); T.offImpr = null; };
+  const toutes = () => [...V.list.values()].filter(v => !st.vente || v.vente === st.vente);
+  const filtrer = (vs, ignore) => vs.filter(v => (ignore === "statut" || st.statut === "tous" || (st.statut === "terminee") === (v.statut === "terminee"))
+    && (ignore === "impr" || st.impr === "tous" || etatImpr(v) === st.impr)
+    && (!st.du || (v.date || "") >= st.du) && (!st.au || (v.date || "") <= st.au)
+    && (!st.q || norm(`${v.prenom} ${v.nom} ${v.nom} ${v.prenom} ${rang(v) || ""} ${v.id}`).includes(norm(st.q))));
+  const dessiner = () => {
+    cacheEmp = new WeakMap();
+    const base = toutes(), etats = new Map(base.map(v => [v.id, etatImpr(v)]));
+    for (const id of [...st.sel]) if (!V.list.has(id)) st.sel.delete(id);
+    const vis = filtrer(base).sort((a, b) => (a.vente || "").localeCompare(b.vente || "") || ordreRang(a, b));
+    const cpt = (lab, n, onclick, on, cls) => el("button", { class: "impr-cpt " + (cls || "") + (on ? " on" : ""), onclick }, el("b", { text: n }), el("span", { text: lab }));
+    const n = k => base.filter(v => etats.get(v.id) === k).length;
+    const fixer = (k, val) => () => { st[k] = st[k] === val ? "tous" : val; dessiner(); };
+    const selVis = vis.filter(v => st.sel.has(v.id)).length, cache = st.sel.size - selVis;
+    const venteSel = el("select", { "aria-label": "Vente" }, el("option", { value: "", text: "Toutes les ventes" }), ventesTriees().map(x => el("option", { value: x.id, text: x.nom })));
+    venteSel.value = st.vente; venteSel.addEventListener("change", () => { st.vente = venteSel.value; dessiner(); });
+    const du = el("input", { type: "date", value: st.du, "aria-label": "Visites à partir du" }); du.addEventListener("change", () => { st.du = du.value; dessiner(); });
+    const au = el("input", { type: "date", value: st.au, "aria-label": "Visites jusqu'au" }); au.addEventListener("change", () => { st.au = au.value; dessiner(); });
+    const q = el("input", { id: "ci-q", type: "search", placeholder: "Nom, prénom ou n° du client…", value: st.q }); q.addEventListener("input", () => { st.q = q.value; dessiner(); const n2 = document.getElementById("ci-q"); n2.focus(); n2.setSelectionRange(n2.value.length, n2.value.length); });
+    const choisir = filtre => () => { for (const v of filtrer(base, "impr").filter(filtre)) st.sel.add(v.id); dessiner(); };
+    const attente = Object.entries(lotsImpr()).filter(([, b]) => (b.etat === "genere" || b.etat === "demande") && b.fiches && Object.keys(b.fiches).some(id => V.list.has(id) && (!st.vente || V.list.get(id).vente === st.vente))).sort((a, b) => String(b[1].t).localeCompare(String(a[1].t)));
+    box.replaceChildren(...[
+      el("div", { class: "vacts" }, el("strong", { style: "font-size:20px", text: "Centre d'impression" }), el("span", { class: "sp" }), el("button", { class: "btn", text: "Fermer", onclick: close })),
+      el("div", { class: "impr-cpts" },
+        cpt("fiches", base.length, () => { st.impr = "tous"; st.statut = "tous"; dessiner(); }, st.impr === "tous" && st.statut === "tous"),
+        cpt("jamais imprimées", n("jamais"), fixer("impr", "jamais"), st.impr === "jamais", "impr-jamais"),
+        cpt("imprimées à jour", n("ajour"), fixer("impr", "ajour"), st.impr === "ajour", "impr-ajour"),
+        cpt("à réimprimer", n("reimp"), fixer("impr", "reimp"), st.impr === "reimp", "impr-reimp"),
+        cpt("en cours", base.filter(v => v.statut !== "terminee").length, fixer("statut", "en_cours"), st.statut === "en_cours"),
+        cpt("terminées", base.filter(v => v.statut === "terminee").length, fixer("statut", "terminee"), st.statut === "terminee")),
+      el("div", { class: "impr-filtres" }, venteSel, el("label", {}, "Du", du), el("label", {}, "au", au), q),
+      attente.length ? el("details", { class: "impr-attente" }, el("summary", { text: `${attente.length} impression${attente.length > 1 ? "s" : ""} en attente de confirmation` }),
+        attente.map(([id, b]) => el("div", { class: "vacts" }, el("span", { text: `${fDT(b.t)} · ${b.n} fiche${b.n > 1 ? "s" : ""}${b.demande ? " · impression demandée" : " · PDF généré"}` }), el("span", { class: "sp" }),
+          el("button", { class: "btn small", text: "Répondre…", onclick: () => modale("Confirmer l'impression", c => [questionConfirmation(id, b.ordre || Object.keys(b.fiches), b.fiches, () => { c(); dessiner(); })]) })))) : null,
+      el("div", { class: "vacts impr-sel" },
+        el("span", { class: "vmeta", text: `${st.sel.size} fiche${st.sel.size > 1 ? "s" : ""} sélectionnée${st.sel.size > 1 ? "s" : ""}${cache ? ` (dont ${cache} masquée${cache > 1 ? "s" : ""} par les filtres)` : ""}` }),
+        el("button", { class: "btn small", text: `Tout sélectionner (${vis.length})`, onclick: () => { vis.forEach(v => st.sel.add(v.id)); dessiner(); } }),
+        el("button", { class: "btn small", text: "+ Jamais imprimées", onclick: choisir(v => etats.get(v.id) === "jamais") }),
+        el("button", { class: "btn small", text: "+ À réimprimer", onclick: choisir(v => etats.get(v.id) === "reimp") }),
+        st.sel.size ? el("button", { class: "btn small", text: "Vider la sélection", onclick: () => { st.sel.clear(); dessiner(); } }) : null,
+        el("span", { class: "sp" }),
+        el("button", { class: "btn primary", disabled: !st.sel.size, text: `Imprimer la sélection (${st.sel.size})`, onclick: recap })),
+      el("div", { class: "impr-liste" }, vis.length ? vis.map(v => {
+        const cb = el("input", { type: "checkbox", checked: st.sel.has(v.id), "aria-label": "Sélectionner " + nomClient(v) });
+        cb.addEventListener("change", () => { cb.checked ? st.sel.add(v.id) : st.sel.delete(v.id); dessiner(); });
+        const c = imprConfirmees(v), der = c[c.length - 1], vte = V.ventes.get(v.vente);
+        return el("label", { class: "impr-l" + (st.sel.has(v.id) ? " on" : "") }, cb,
+          el("span", { class: "impr-nom" }, el("b", {}, rang(v) ? el("span", { class: "rang", text: "N° " + rang(v) }) : null, " " + nomClient(v)),
+            el("span", { class: "vmeta", text: `${vte ? vte.nom + " · " : ""}${fDate(v.date)} · ${(v.lots || []).filter(l => l.vu).length} lots vus · ${v.statut === "terminee" ? "terminée" : "en cours"}${der ? " · imprimée le " + fDT(der.t) : ""}` })),
+          pastilleImpr(v, true));
+      }) : el("p", { class: "hint", text: "Aucune fiche ne correspond aux filtres." }))].filter(Boolean));
+  };
+  const recap = () => {
+    const vs = [...st.sel].map(id => V.list.get(id)).filter(Boolean).sort((a, b) => (a.vente || "").localeCompare(b.vente || "") || ordreRang(a, b));
+    const c = k => vs.filter(v => etatImpr(v) === k).length;
+    let rv = true;
+    modale("Imprimer la sélection", close2 => {
+      const cb = el("input", { type: "checkbox", checked: true }); cb.addEventListener("change", () => { rv = cb.checked; });
+      return [el("p", { text: `Vous avez sélectionné ${vs.length} fiche${vs.length > 1 ? "s" : ""} :` }),
+        el("ul", { class: "impr-recap" }, el("li", { text: `${c("jamais")} jamais imprimée${c("jamais") > 1 ? "s" : ""}` }), el("li", { text: `${c("reimp")} à réimprimer` }), el("li", { text: `${c("ajour")} déjà imprimée${c("ajour") > 1 ? "s" : ""} et à jour${c("ajour") ? " (réimpression volontaire)" : ""}` })),
+        el("label", { class: "hl-opt" }, cb, " Recto verso : chaque fiche commence sur une nouvelle feuille"),
+        el("div", { class: "vacts" }, el("button", { class: "btn", text: "Modifier la sélection", onclick: close2 }), el("span", { class: "sp" }),
+          c("ajour") && c("ajour") < vs.length ? el("button", { class: "btn", text: `Sans les ${c("ajour")} déjà à jour`, onclick: () => { close2(); imprimerFiches(vs.filter(v => etatImpr(v) !== "ajour"), { rv }); } }) : null,
+          el("button", { class: "btn primary", text: `Générer le PDF (${vs.length})`, onclick: () => { close2(); imprimerFiches(vs, { rv }); } }))];
+    });
+  };
+  T.offImpr = dessiner; // se redessine quand les visites ou le journal d'impression changent
+  document.body.append(m); dessiner();
 }
 
 let m0 = "plan"; try { m0 = localStorage.getItem("onglet") || "plan"; } catch (_) {}
