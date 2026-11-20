@@ -20,6 +20,6 @@
   function run(c) { const docs = Object.keys(load()[c] || {}).map(id => snap(c, id)); return { docs, size: docs.length }; }
   const db = { settings() {}, enablePersistence: async () => {}, collection: col,
     doc: p => { const [c, id] = p.split('/'); return doc(c, id); },
-    batch() { const ops = []; return { set(r, d) { ops.push(() => r.set(d)); }, delete(r) { ops.push(() => r.delete()); }, commit: async () => { lot++; try { for (const o of ops) await o(); } finally { lot--; save(load()); } } }; } };
+    batch() { const ops = []; return { set(r, d) { ops.push(() => r.set(d)); }, update(r, d) { ops.push(() => r.update(d)); }, delete(r) { ops.push(() => r.delete()); }, commit: async () => { lot++; try { for (const o of ops) await o(); } finally { lot--; save(load()); } } }; } };
   window.firebase = { initializeApp() {}, firestore: Object.assign(() => db, { FieldValue: { delete: () => ({ __del: true }) } }) };
 })();
