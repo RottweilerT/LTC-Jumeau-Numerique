@@ -2,7 +2,7 @@ const { chromium } = require('playwright'); const fs = require('fs');
 (async () => {
   const b = await chromium.launch(); const errs = [];
   const iso = m => { const d = new Date(); d.setDate(d.getDate() + m); return d.toLocaleDateString('sv-SE'); };
-  const data = { personnes: { p_a: { nom: 'Armand Charrin' }, p_b: { nom: 'Benjamin Botti' } }, config: { profils: { remise: 1, ajout: 1 }, batiment: { nom: 'Bâtiment', largeur: 9, profondeur: 14, zones: [], murs: [] }, ventes: { liste: { vdec: { nom: 'Vente Collections Décembre 2026', date: iso(20) } } } },
+  const data = { personnes: { p_a: { nom: 'Armand Charrin' }, p_b: { nom: 'Benjamin Botti' } }, config: { profils: { remise: 1, ajout: 1 }, batiment: { nom: 'Bâtiment', largeur: 9, profondeur: 14, zones: [], murs: [] }, ventes: { liste: { vdec: { nom: 'Vente Collections Décembre 2026', date: iso(20), catalogue: { nom: 'f.xlsx', n: 4, parts: 1, t: '2026-11-19T10:00:00Z' } } } }, lots_vdec_0: { lots: [{ l: '40150', r: '111111', u: 'B9', q: 2 }, { l: '40322', r: '172658' }, { l: '40323' }, { l: '40400', u: 'A', q: 1 }] } },
     racks: { R1: { code: 'A1', type: 'etagere', x: 1, y: 1, w: 1, d: .5, niveaux: 4 } }, items: { L40322: { lot: 40322, nom: '40322', idlot: 172658, niveau: 2, rackId: 'R1', unite: 'A', qte: 1 } },
     visites: {
       a: { prenom: 'Frank', nom: 'Eder', date: '2026-11-02', heure: '08:02', statut: 'terminee', vente: 'vdec', signatures: {}, lots: [{ lot: '40322', vu: '2026-11-02T12:07:41Z', revus: ['2026-11-03T09:00:00Z'], note: 'Aminci au verso' }, { lot: '40323', vu: '2026-11-02T12:12:29Z' }], historique: [{ action: 'vu', lot: '40322', par: 'p_a', t: '2026-11-02T12:07:41Z' }, { action: 'vu', lot: '40323', par: 'p_a', t: '2026-11-02T12:12:29Z' }] },
@@ -23,6 +23,9 @@ const { chromium } = require('playwright'); const fs = require('fs');
   await p.fill('.hl-q', '40322'); await p.waitForTimeout(300);
   console.log((await p.locator('.hl-lot').allInnerTexts()).join('\n---\n'));
   await p.screenshot({ path: '/tmp/histlots.png' });
-  await p.click('.hl-opt input'); await p.waitForTimeout(200);
-  console.log('avec non vus :', await p.locator('.hl-client').count(), errs); await b.close();
+  await p.click('.hl-modes button:has-text("Tous les lots")'); await p.waitForTimeout(200);
+  console.log('avec non vus :', await p.locator('.hl-client').count());
+  await p.fill('.hl-q', ''); await p.click('.hl-modes button:has-text("jamais vus")'); await p.waitForTimeout(300);
+  console.log(await p.locator('.hl-liste').evaluate(e => e.parentElement.querySelector('.hl-compte').textContent), '\n' + (await p.locator('.hl-lot').allInnerTexts()).join('\n---\n'));
+  await p.screenshot({ path: '/tmp/jamais.png' }); console.log(errs); await b.close();
 })();
