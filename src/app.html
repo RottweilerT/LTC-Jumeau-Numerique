@@ -2247,7 +2247,9 @@ async function exportNotes(vs, nom) {
   try { await dl.save({ filename: nom, data: "\ufeff" + lignes.join("\r\n") }); toast("Récapitulatif téléchargé"); } catch (e) { if (e?.code !== "declined") toast("Téléchargement impossible.", true); }
 }
 /* ---- Historique des lots d'une vente : quels clients ont demandé / vu chaque lot, quand, et qui l'a coché ---- */
-function histLots(vt, vs) {
+async function histLots(vt, vs) {
+  // fichier des lots de la vente : on attend qu'il soit chargé (au plus 8 s) pour lister aussi les lots jamais demandés
+  if (vt.catalogue && !catVente(vt.id)) for (let i = 0; i < 40 && !catVente(vt.id); i++) await new Promise(ok => setTimeout(ok, 200));
   const cat = catalogFor({ vente: vt.id }), par = new Map(); // lot -> [{v, l, qui}]
   for (const v of vs) for (const l of v.lots || []) {
     const h = (v.historique || []).filter(x => x.lot === l.lot && x.action === "vu");
@@ -2257,8 +2259,11 @@ function histLots(vt, vs) {
   }
   const ids = [...new Set([...par.values()].flat().map(x => x.qui).filter(Boolean))];
   const noms = {};
-  const etat = { q: "", vusSeuls: true };
-  let liste;
+  const etat = { q: "", mode: "vus" }; // vus | jamais | tous
+  // Lots jamais vus : demandés mais vus par aucun client, et (si la vente a son fichier des lots) ceux que personne n'a demandés
+  const nVuDe = k => (par.get(k) || []).filter(x => x.l.vu).length;
+  const jamais = () => [...new Set([...par.keys(), ...(cat.fichier ? [...cat.keys()] : [])])].filter(k => !nVuDe(k)).sort(ordreLot);
+  let liste, compte;
   const ligneClient = ({ v, l, qui }) => {
     const rk = rang(v), passages = [l.vu, ...(l.revus || [])].filter(Boolean);
     return el("div", { class: "hl-client" + (l.vu ? "" : " pas-vu") },
@@ -2268,38 +2273,53 @@ function histLots(vt, vs) {
   };
   const dessiner = () => {
     const q = etat.q.replace(/\s/g, "");
-    const lots = [...par.keys()].filter(k => !q || k.includes(q) || String(info(cat, k).idlot || "").includes(q)).sort(ordreLot);
+    const base = etat.mode === "jamais" ? jamais() : [...par.keys()];
+    const lots = base.filter(k => !q || k.includes(q) || String(info(cat, k).idlot || "").includes(q)).sort(ordreLot);
+    compte.textContent = etat.mode === "jamais" ? `${lots.length} lot${lots.length > 1 ? "s" : ""} jamais vu${lots.length > 1 ? "s" : ""}${cat.fichier ? " (fichier des lots de la vente compris)" : ""}` : "";
     const blocs = lots.map(k => {
+      if (etat.mode === "jamais") { // ligne compacte : format, emplacement, demandé par qui
+        const e = info(cat, k), dem = par.get(k) || [];
+        return el("div", { class: "hl-lot" },
+          el("div", { class: "hl-tete" }, el("b", { class: "lotno", text: k }), e.idlot ? el("span", { class: "sub", text: " Réf. " + e.idlot }) : null,
+            el("span", { class: "vmeta", text: ` · ${fmtFormat(e)} · ${e.locs.join(" + ")}` })),
+          el("div", { class: "vmeta", text: dem.length ? `Demandé par ${dem.map(x => (rang(x.v) ? "N° " + rang(x.v) + " " : "") + nomClient(x.v)).join(", ")}, pas encore vu` : "Demandé par aucun client" }));
+      }
       let ent = par.get(k).slice().sort((a, b) => (a.l.vu ? 0 : 1) - (b.l.vu ? 0 : 1) || String(a.l.vu || "").localeCompare(String(b.l.vu || "")));
       const nVu = ent.filter(x => x.l.vu).length;
-      if (etat.vusSeuls) { ent = ent.filter(x => x.l.vu); if (!ent.length) return null; }
+      if (etat.mode === "vus") { ent = ent.filter(x => x.l.vu); if (!ent.length) return null; }
       const e = info(cat, k);
       return el("div", { class: "hl-lot" },
         el("div", { class: "hl-tete" }, el("b", { class: "lotno", text: k }), e.idlot ? el("span", { class: "sub", text: " Réf. " + e.idlot }) : null,
           el("span", { class: "vmeta", text: ` · vu par ${nVu} client${nVu > 1 ? "s" : ""} · demandé par ${par.get(k).length}` })),
         ent.map(ligneClient));
     }).filter(Boolean);
-    liste.replaceChildren(...(blocs.length ? blocs : [el("p", { class: "hint", text: q ? `Aucun lot « ${etat.q} » dans les visites de cette vente.` : "Aucun lot vu pour l'instant dans cette vente." })]));
+    liste.replaceChildren(...(blocs.length ? blocs : [el("p", { class: "hint", text: q ? `Aucun lot « ${etat.q} » ${etat.mode === "jamais" ? "parmi les lots jamais vus" : "dans les visites de cette vente"}.` : etat.mode === "jamais" ? "Tous les lots ont été vus au moins une fois." : "Aucun lot vu pour l'instant dans cette vente." })]));
   };
   const exporter = async () => {
     const qq = s => '"' + String(s ?? "").replace(/"/g, '""') + '"';
-    const lignes = [["N° de lot", "Réf.", "N° client", "Client", "Vu le", "Revu (heures)", "Coché par", "Annotation"].map(qq).join(";")];
-    for (const k of [...par.keys()].sort(ordreLot)) for (const { v, l, qui } of par.get(k)) {
+    let lignes = [["N° de lot", "Réf.", "N° client", "Client", "Vu le", "Revu (heures)", "Coché par", "Annotation"].map(qq).join(";")];
+    if (etat.mode === "jamais") lignes = [["N° de lot", "Réf.", "Format", "Emplacement", "Demandé par"].map(qq).join(";"),
+      ...jamais().map(k => { const e = info(cat, k); return [k, e.idlot || "", fmtFormat(e), e.locs.join(" + "), (par.get(k) || []).map(x => nomClient(x.v)).join(", ")].map(qq).join(";"); })];
+    else for (const k of [...par.keys()].sort(ordreLot)) for (const { v, l, qui } of par.get(k)) {
       if (!l.vu) continue;
       lignes.push([k, info(cat, k).idlot || "", rang(v) || "", nomClient(v), fDT(l.vu), (l.revus || []).map(fDT).join(" / "), qui ? (noms[qui] || "") : "", l.note || ""].map(qq).join(";"));
     }
     let dl = null; try { dl = await claude.use("downloads"); } catch (_) {}
     if (!dl) { toast("Le téléchargement n'est pas disponible ici.", true); return; }
-    try { await dl.save({ filename: `Historique_lots_${vt.nom.replace(/[^\w\-]+/g, "_")}.csv`, data: "\ufeff" + lignes.join("\r\n") }); toast("Historique téléchargé"); } catch (e) { if (e?.code !== "declined") toast("Téléchargement impossible.", true); }
+    try { await dl.save({ filename: `${etat.mode === "jamais" ? "Lots_jamais_vus" : "Historique_lots"}_${vt.nom.replace(/[^\w\-]+/g, "_")}.csv`, data: "\ufeff" + lignes.join("\r\n") }); toast("Historique téléchargé"); } catch (e) { if (e?.code !== "declined") toast("Téléchargement impossible.", true); }
   };
   modale(`Historique des lots · ${vt.nom}`, close => {
     const q = el("input", { type: "search", class: "hl-q", placeholder: "N° de lot ou référence (ex. 40322)", inputmode: "numeric", "aria-label": "Chercher un lot" });
     q.addEventListener("input", () => { etat.q = q.value.trim(); dessiner(); });
-    const cb = el("input", { type: "checkbox", checked: true }); cb.addEventListener("change", () => { etat.vusSeuls = cb.checked; dessiner(); });
+    const choix = el("div", { class: "filters hl-modes" });
+    const majChoix = () => choix.replaceChildren(...[["vus", "Lots déjà vus"], ["jamais", "Lots jamais vus"], ["tous", "Tous les lots demandés"]].map(([k, lab]) =>
+      el("button", { type: "button", "aria-pressed": String(etat.mode === k), text: lab, onclick: () => { etat.mode = k; majChoix(); dessiner(); } })));
+    majChoix();
+    compte = el("div", { class: "vmeta hl-compte" });
     liste = el("div", { class: "hl-liste" });
     dessiner(); setTimeout(() => q.focus(), 50);
     if (ids.length && T.user) T.user.profiles(ids).then(ps => { for (const i of ids) noms[i] = ps[i]?.name || ""; dessiner(); }).catch(() => {});
-    return [q, el("label", { class: "hl-opt" }, cb, " Seulement les lots déjà vus"), liste,
+    return [q, choix, compte, liste,
       el("div", { class: "vacts" }, el("button", { class: "btn", text: "Télécharger (Excel/CSV)", onclick: exporter }), el("span", { class: "sp" }), el("button", { class: "btn", text: "Fermer", onclick: close }))];
   });
 }
