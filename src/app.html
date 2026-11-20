@@ -2425,7 +2425,12 @@ function listView() {
       el("b", {}, rk ? el("span", { class: "rang", text: "N° " + rk }) : null, nomClient(v)),
       el("div", { class: "vmeta", text: `${fDate(v.date)} à ${v.heure || "—"}${v.collab ? " · avec " + v.collab : ""}` }),
       el("div", { class: "vmeta", text: `${vu} lot${vu > 1 ? "s" : ""} présenté${vu > 1 ? "s" : ""} sur ${n}` }),
-      el("div", { class: "vacts" }, el("button", { class: "btn small", text: vte ? "Changer de vente" : "Ranger…", onclick: e => { e.stopPropagation(); menuRanger(v); } }), el("span", { class: "sp" }), del));
+      el("div", { class: "vacts" }, el("button", { class: "btn small", text: vte ? "Changer de vente" : "Ranger…", onclick: e => { e.stopPropagation(); menuRanger(v); } }),
+        // Terminer (ou rouvrir) la visite directement depuis la liste des clients de la vente
+        v.statut === "terminee"
+          ? el("button", { class: "btn small", text: "Rouvrir", onclick: e => { e.stopPropagation(); patch(v.id, { statut: "en_cours", historique: hist(V.list.get(v.id) || v, "reouverture") }); toast(`Visite de ${nomClient(v)} rouverte`); } })
+          : el("button", { class: "btn small primary", text: "Terminer la visite", onclick: e => { e.stopPropagation(); patch(v.id, { statut: "terminee", fin: new Date().toISOString(), historique: hist(V.list.get(v.id) || v, "terminee") }); toast(`Visite de ${nomClient(v)} terminée : elle passe dans « Clients terminés »`); } }),
+        el("span", { class: "sp" }), del));
     appuiLong(card, () => menuRanger(V.list.get(v.id) || v));
     return card;
   };
