@@ -7,3 +7,5 @@ const FIREBASE_CONFIG = {
   messagingSenderId: "299183436446",
   appId: "1:299183436446:web:7a0a59004052d440b2018f"
 };
+/* Code d'accès : compte Firebase Authentication de l'équipe (le code = son mot de passe, jamais dans le dépôt) */
+const JUMEAU_ACCES = "equipe@ltc-jumeau-numerique.firebaseapp.com";
