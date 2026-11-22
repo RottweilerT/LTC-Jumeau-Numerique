@@ -34,11 +34,20 @@ jobs:
           if [ -n "$VERSION" ]; then git show "$VERSION:sauvegarde/base.json.enc" > /tmp/base.enc; else cp sauvegarde/base.json.enc /tmp/base.enc; fi
           openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -in /tmp/base.enc -out /tmp/base.json -pass env:CLE
       - name: Réécrire les documents
+        env:
+          CODE: ${{ secrets.JUMEAU_CODE }}
         run: |
           python3 - <<'PY'
-          import json, re, urllib.request, urllib.error
+          import json, os, re, urllib.request, urllib.error
           KEY = re.search(r'apiKey:\s*"([^"]+)"', open("firebase-config.js", encoding="utf-8").read()).group(1)
           HDR = {"Referer": "https://rottweilert.github.io/LTC-Jumeau-Numerique/", "Content-Type": "application/json"}
+          # Code d'accès : si la base est verrouillée (JUMEAU_ACCES dans firebase-config.js), on s'identifie avec le secret JUMEAU_CODE
+          _page = open("firebase-config.js", encoding="utf-8").read(); _acc = re.search(r'JUMEAU_ACCES\s*=\s*"([^"]+)"', _page); _code = os.environ.get("CODE", "")
+          if _acc and _code:
+              _r = urllib.request.Request(f"https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key={KEY}", data=json.dumps({"email": _acc.group(1), "password": _code, "returnSecureToken": True}).encode(), headers={**HDR, "Content-Type": "application/json"})
+              try: HDR["Authorization"] = "Bearer " + json.load(urllib.request.urlopen(_r))["idToken"]
+              except urllib.error.HTTPError as e: print(f"::error::Identification refusée ({e.code}) : le secret JUMEAU_CODE ne correspond pas au code d'accès"); raise SystemExit(1)
+          elif _acc: print("::warning::La base est verrouillée mais le secret JUMEAU_CODE manque : la lecture risque d'être refusée")
           b = json.load(open("/tmp/base.json"))
           base = f"https://firestore.googleapis.com/v1/projects/{b['projet']}/databases/(default)/documents"
           ok = err = 0

@@ -36,6 +36,8 @@ jobs:
           fi
           echo "::notice::Déchiffrement réussi : la clé est la bonne"
       - name: Contrôler la sauvegarde et la comparer à la base (lecture seule)
+        env:
+          CODE: ${{ secrets.JUMEAU_CODE }}
         run: |
           python3 - <<'PY'
           import json, os, re, urllib.request, urllib.error
@@ -60,6 +62,13 @@ jobs:
           page = open("firebase-config.js", encoding="utf-8").read()
           KEY = re.search(r'apiKey:\s*"([^"]+)"', page).group(1)
           HDR = {"Referer": "https://rottweilert.github.io/LTC-Jumeau-Numerique/"}
+          # Code d'accès : si la base est verrouillée (JUMEAU_ACCES dans firebase-config.js), on s'identifie avec le secret JUMEAU_CODE
+          _page = open("firebase-config.js", encoding="utf-8").read(); _acc = re.search(r'JUMEAU_ACCES\s*=\s*"([^"]+)"', _page); _code = os.environ.get("CODE", "")
+          if _acc and _code:
+              _r = urllib.request.Request(f"https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key={KEY}", data=json.dumps({"email": _acc.group(1), "password": _code, "returnSecureToken": True}).encode(), headers={**HDR, "Content-Type": "application/json"})
+              try: HDR["Authorization"] = "Bearer " + json.load(urllib.request.urlopen(_r))["idToken"]
+              except urllib.error.HTTPError as e: print(f"::error::Identification refusée ({e.code}) : le secret JUMEAU_CODE ne correspond pas au code d'accès"); raise SystemExit(1)
+          elif _acc: print("::warning::La base est verrouillée mais le secret JUMEAU_CODE manque : la lecture risque d'être refusée")
           base = f"https://firestore.googleapis.com/v1/projects/{b['projet']}/databases/(default)/documents"
           def lire(col):
               docs, token = {}, ""
@@ -84,6 +93,13 @@ jobs:
               disp = sum(1 for i in s if i not in a)
               note(f"| {col} | {len(s)} | {len(a)} | {ident} | {modif} | {ajout} | {disp} |")
               print(f"{col} : sauvegarde {len(s)} · base {len(a)} · identiques {ident} · modifiés {modif} · ajoutés {ajout} · disparus {disp}")
+          # La base est-elle fermée au public ? (lecture sans code d'accès)
+          try:
+              urllib.request.urlopen(urllib.request.Request(f"{base}/config?pageSize=1&key={KEY}", headers={"Referer": HDR["Referer"]})).read()
+              ferme = False
+          except urllib.error.HTTPError as e: ferme = e.code in (401, 403)
+          note(f"\n- Base fermée au public (lecture sans code refusée) : **{'oui' if ferme else 'NON, la base est encore ouverte'}**")
+          print("Base fermée au public :", "oui" if ferme else "non")
           note("\n« Modifiés / ajoutés / disparus depuis » = changements faits dans l'appli après la sauvegarde : c'est normal.")
           if erreurs:
               note("\n**Problèmes :** " + " ; ".join(erreurs))

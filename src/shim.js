@@ -21,6 +21,46 @@
     } catch (e) { console.error(e); db = null; }
   }
 
+  // ----- Code d'accès (verrou réel) -----
+  // Le code est le mot de passe d'un compte Firebase partagé par l'équipe (JUMEAU_ACCES = son adresse, dans firebase-config.js).
+  // Les règles Firestore n'ouvrent la base qu'à ce compte : sans le code, rien n'est lisible ni modifiable.
+  // Une fois le code saisi, l'appareil reste ouvert (jusqu'à « Verrouiller cet appareil » ou un changement de code).
+  const ACCES = typeof JUMEAU_ACCES !== "undefined" && JUMEAU_ACCES ? String(JUMEAU_ACCES) : null;
+  const auth = db && ACCES && firebase.auth ? firebase.auth() : null;
+  let ouvrir, estOuvert = false; const acces = new Promise(r => { ouvrir = () => { estOuvert = true; r(); }; });
+  if (!auth) ouvrir();
+  else auth.onAuthStateChanged(u => {
+    if (u && u.email === ACCES) { document.getElementById("verrou")?.remove(); if (!estOuvert) ouvrir(); }
+    else if (estOuvert) location.reload(); // code changé ou appareil verrouillé ailleurs : on repart de l'écran du code
+    else verrou();
+  });
+  function verrou() {
+    if (document.getElementById("verrou")) return;
+    if (!document.body) { document.addEventListener("DOMContentLoaded", verrou, { once: true }); return; }
+    const box = document.createElement("div");
+    box.id = "verrou"; box.className = "login";
+    box.innerHTML = `<form class="login-card login-new verrou" autocomplete="on">
+      <div class="login-head"><img src="logo-96.png?v=3" alt="" width="64" height="64"><div><small>LTC Jumeau numérique</small><h1>Code d'accès</h1></div></div>
+      <p class="login-hint">Entrez le code de l'équipe. Il ne sera plus demandé sur cet appareil.</p>
+      <input type="email" name="u" autocomplete="username" value="${ACCES.replace(/"/g, "")}" hidden readonly>
+      <label>Code<input type="password" name="c" autocomplete="current-password" required minlength="6" autofocus></label>
+      <button class="btn primary big" type="submit">Entrer</button>
+      <p class="login-err" hidden></p></form>`;
+    document.body.append(box);
+    const f = box.querySelector("form"), err = box.querySelector(".login-err"), bt = box.querySelector("button");
+    setTimeout(() => f.c.focus(), 50);
+    f.addEventListener("submit", async e => {
+      e.preventDefault(); err.hidden = true; bt.disabled = true; bt.textContent = "Vérification…";
+      try { await auth.signInWithEmailAndPassword(ACCES, f.c.value); }
+      catch (x) {
+        const c = String(x && x.code || "");
+        err.textContent = /wrong-password|invalid-credential|invalid-login|user-not-found|invalid-password/.test(c) ? "Code incorrect." : /too-many-requests/.test(c) ? "Trop d'essais. Réessayez dans quelques minutes." : /network/.test(c) ? "Pas de connexion Internet. Réessayez." : "Ouverture impossible (" + (c || "erreur") + ").";
+        err.hidden = false; bt.disabled = false; bt.textContent = "Entrer"; f.c.select();
+      }
+    });
+  }
+  window.__verrouiller = async () => { ["jumeau-profil", "jumeau-profil-nom"].forEach(k => ls.del(k)); if (auth) await auth.signOut().catch(() => {}); location.reload(); };
+
   // ----- Profil -----
   // Ancienne version : un identifiant par appareil + prénom. On le reprend tel quel comme profil.
   // (une seule fois : les anciennes clés sont ensuite effacées, sinon le changement de profil ramenait toujours l'ancien)
@@ -35,7 +75,7 @@
   const names = new Map();
   if (ID) names.set(ID, NOM);
   const user = {
-    id: async () => { await pret; return ID; },
+    id: async () => { await acces; await pret; return ID; },
     can: async () => true,
     profiles: async ids => {
       const out = {};
@@ -55,7 +95,7 @@
       return { status: "saved" };
     }
   };
-  window.claude = { use: async name => name === "db" ? db : name === "user" ? (db ? user : null) : name === "downloads" ? downloads : null };
+  window.claude = { use: async name => { if (name === "db" || name === "user") await acces; return name === "db" ? db : name === "user" ? (db ? user : null) : name === "downloads" ? downloads : null; } };
   window.__profil = () => ({ id: ID, nom: NOM });
 
   const norm = s => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
@@ -82,8 +122,10 @@
         <label>Nouveau profil<input name="n" maxlength="40" autocomplete="name" placeholder="Prénom et nom"></label>
         <button class="btn primary big" type="submit">Créer mon profil</button>
         <p class="login-err" hidden></p>
-      </form></div>`;
+      </form>
+      ${auth ? '<button type="button" class="login-del login-lock">Verrouiller cet appareil</button>' : ""}</div>`;
     document.body.append(box);
+    box.querySelector(".login-lock")?.addEventListener("click", () => window.__verrouiller());
     const list = box.querySelector(".login-list"), q = box.querySelector(".login-q"), form = box.querySelector(".login-new"), err = box.querySelector(".login-err");
     let profils = [];
     const dessiner = () => {
@@ -184,6 +226,7 @@
 
   async function demarrer() {
     if (!db) return;
+    await acces;
     await remiseAZero();
     await creerEquipe();
     if (!ID) connexion();

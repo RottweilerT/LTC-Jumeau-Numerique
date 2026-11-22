@@ -22,6 +22,7 @@ jobs:
       - name: Lire toute la base
         env:
           COLLECTIONS: "config racks items visites personnes"
+          CODE: ${{ secrets.JUMEAU_CODE }}
         run: |
           python3 - <<'PY'
           import json, os, re, urllib.request, urllib.error
@@ -32,6 +33,13 @@ jobs:
           KEY = m.group(1)
           os.environ["PROJET"] = re.search(r'projectId:\s*"([^"]+)"', page).group(1)
           HDR = {"Referer": "https://rottweilert.github.io/LTC-Jumeau-Numerique/"}
+          # Code d'accès : si la base est verrouillée (JUMEAU_ACCES dans firebase-config.js), on s'identifie avec le secret JUMEAU_CODE
+          _page = open("firebase-config.js", encoding="utf-8").read(); _acc = re.search(r'JUMEAU_ACCES\s*=\s*"([^"]+)"', _page); _code = os.environ.get("CODE", "")
+          if _acc and _code:
+              _r = urllib.request.Request(f"https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key={KEY}", data=json.dumps({"email": _acc.group(1), "password": _code, "returnSecureToken": True}).encode(), headers={**HDR, "Content-Type": "application/json"})
+              try: HDR["Authorization"] = "Bearer " + json.load(urllib.request.urlopen(_r))["idToken"]
+              except urllib.error.HTTPError as e: print(f"::error::Identification refusée ({e.code}) : le secret JUMEAU_CODE ne correspond pas au code d'accès"); raise SystemExit(1)
+          elif _acc: print("::warning::La base est verrouillée mais le secret JUMEAU_CODE manque : la lecture risque d'être refusée")
           base = f"https://firestore.googleapis.com/v1/projects/{os.environ['PROJET']}/databases/(default)/documents"
           out, total = {}, 0
           for col in os.environ["COLLECTIONS"].split():

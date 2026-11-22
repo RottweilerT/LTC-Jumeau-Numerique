@@ -2,6 +2,7 @@
 <title>Importer des données – LTC Jumeau numérique</title><link rel="icon" href="favicon-32.png?v=3" type="image/png"><link rel="apple-touch-icon" href="apple-touch-icon.png?v=3"><link rel="manifest" href="manifest.webmanifest">
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="firebase-config.js"></script>
 <style>
 :root{--bg:#EDF1F7;--surface:#fff;--ink:#12223F;--muted:#5B646E;--line:#D2D7D8;--accent:#B9661F;--ok:#2E7D4F;--danger:#B3261E}
@@ -15,6 +16,7 @@ button.primary{background:var(--accent);border-color:var(--accent);color:#fff}bu
 </style></head><body><main>
 <h1 style="display:flex;align-items:center;gap:12px"><img src="logo-96.png?v=3" alt="" width="44" height="44" >Importer des données dans le jumeau</h1>
 <p class="muted">Pour transférer le jumeau depuis claude.ai : dans l'ancien jumeau, bouton « Exporter toutes les données » (panneau de droite, rubrique Sauvegarde), puis choisir ici le fichier obtenu. Les éléments déjà présents avec le même identifiant sont remplacés ; les autres ne sont pas touchés.</p>
+<div class="card" id="code" hidden><b>Code d'accès de l'équipe</b><form id="cf" style="display:flex;gap:8px;flex-wrap:wrap"><input type="email" autocomplete="username" hidden readonly id="cu"><input type="password" id="cc" autocomplete="current-password" placeholder="Code" style="flex:1;padding:10px;border:1px solid var(--line);border-radius:8px;font:inherit"><button class="primary" type="submit">Entrer</button></form><div id="cm" class="err"></div></div>
 <div class="card"><input type="file" id="f" accept=".json,application/json"><div id="res" class="muted">Aucun fichier choisi.</div>
 <div><button class="primary" id="go" disabled>Importer dans la base</button></div><div id="msg"></div></div>
 <p><a href="./">← Retour au jumeau</a></p>
@@ -24,6 +26,14 @@ button.primary{background:var(--accent);border-color:var(--accent);color:#fff}bu
 const $ = s => document.querySelector(s);
 let db = null, data = null;
 if (typeof FIREBASE_CONFIG !== "undefined" && FIREBASE_CONFIG && window.firebase) { firebase.initializeApp(FIREBASE_CONFIG); db = firebase.firestore(); db.settings({ ignoreUndefinedProperties: true, experimentalAutoDetectLongPolling: true }); }
+// Code d'accès (même compte d'équipe que le jumeau) : la base n'est lisible qu'une fois le code saisi
+const ACCES = typeof JUMEAU_ACCES !== "undefined" && JUMEAU_ACCES ? JUMEAU_ACCES : null;
+let ouvert = !ACCES || !db || !firebase.auth;
+if (!ouvert) {
+  const auth = firebase.auth(); $("#cu").value = ACCES;
+  auth.onAuthStateChanged(u => { ouvert = !!(u && u.email === ACCES); $("#code").hidden = ouvert; if (ouvert && data) $("#go").disabled = false; });
+  $("#cf").addEventListener("submit", async e => { e.preventDefault(); $("#cm").textContent = ""; try { await auth.signInWithEmailAndPassword(ACCES, $("#cc").value); } catch (x) { $("#cm").textContent = /too-many/.test(x.code || "") ? "Trop d'essais, réessayez plus tard." : "Code incorrect."; } });
+}
 if (!db) $("#msg").innerHTML = '<p class="err">La base Firebase n\'est pas encore branchée (firebase-config.js).</p>';
 const NOMS = { config: "Réglages du bâtiment", racks: "Emplacements (armoires, roulettes…)", items: "Lots rangés", visites: "Visites clients", personnes: "Personnes" };
 $("#f").addEventListener("change", async () => {
@@ -31,12 +41,13 @@ $("#f").addEventListener("change", async () => {
   const file = $("#f").files[0]; if (!file) return;
   try {
     const j = JSON.parse(await file.text());
+    if (!ouvert) throw new Error("Entrez d'abord le code d'accès de l'équipe (en haut).");
     if (j.format === "jumeau-rangement") { await preparerRangement(j); return; }
     if (j.format !== "jumeau-batiment" || !j.collections) throw new Error("Ce fichier n'est pas un export du jumeau.");
     data = j;
     const rows = Object.entries(j.collections).map(([c, d]) => `<tr><td>${NOMS[c] || c}</td><td><b>${Object.keys(d).length}</b></td></tr>`).join("");
     $("#res").innerHTML = `Export du ${new Date(j.exporte).toLocaleString("fr-FR")} :<table>${rows}</table>`;
-    $("#go").disabled = !db;
+    $("#go").disabled = !db || !ouvert;
   } catch (e) { $("#res").innerHTML = `<span class="err">${e.message || "Fichier illisible."}</span>`; }
 });
 /* Fichier de rangement : des caisses à poser dans un emplacement désigné par son code (ex. coffre C3),

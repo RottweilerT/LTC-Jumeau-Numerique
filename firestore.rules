@@ -1,16 +1,20 @@
 rules_version = '2';
 // Règles de la base du jumeau numérique du bâtiment.
 // À coller dans Firebase → Firestore Database → Règles, puis « Publier ».
-// Accès ouvert (comme les autres applis) : toute personne ayant le lien du site peut lire et modifier.
+// Base fermée : seul le compte de l'équipe (celui du code d'accès) peut lire et modifier.
+// L'adresse ci-dessous doit être exactement celle de JUMEAU_ACCES dans firebase-config.js.
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /config/{id}   { allow read, write: if true; }
-    match /racks/{id}    { allow read, write: if true; }
-    match /items/{id}    { allow read, write: if true; }
-    match /visites/{id}  { allow read, write: if true; }
+    function equipe() {
+      return request.auth != null && request.auth.token.email == "equipe@ltc-jumeau-numerique.firebaseapp.com";
+    }
+    match /config/{id}   { allow read, write: if equipe(); }
+    match /racks/{id}    { allow read, write: if equipe(); }
+    match /items/{id}    { allow read, write: if equipe(); }
+    match /visites/{id}  { allow read, write: if equipe(); }
     match /personnes/{id} {
-      allow read: if true;
-      allow write: if request.resource == null || (request.resource.data.nom is string && request.resource.data.nom.size() <= 40);
+      allow read: if equipe();
+      allow write: if equipe() && (request.resource == null || (request.resource.data.nom is string && request.resource.data.nom.size() <= 40));
     }
   }
 }

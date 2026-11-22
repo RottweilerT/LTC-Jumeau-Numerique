@@ -21,5 +21,11 @@
   const db = { settings() {}, enablePersistence: async () => {}, collection: col,
     doc: p => { const [c, id] = p.split('/'); return doc(c, id); },
     batch() { const ops = []; return { set(r, d) { ops.push(() => r.set(d)); }, update(r, d) { ops.push(() => r.update(d)); }, delete(r) { ops.push(() => r.delete()); }, commit: async () => { lot++; try { for (const o of ops) await o(); } finally { lot--; save(load()); } } }; } };
-  window.firebase = { initializeApp() {}, firestore: Object.assign(() => db, { FieldValue: { delete: () => ({ __del: true }) } }) };
+  // Faux compte Firebase Auth : code = localStorage.__fakecode (défaut « codetest »), session gardée dans localStorage.__fakeauth
+  const AL = new Set(); const cur = () => { const e = localStorage.getItem('__fakeauth'); return e ? { email: e, uid: 'u1' } : null; };
+  const auth = { get currentUser() { return cur(); },
+    onAuthStateChanged(cb) { AL.add(cb); setTimeout(() => cb(cur()), 0); return () => AL.delete(cb); },
+    async signInWithEmailAndPassword(email, pw) { if (pw !== (localStorage.getItem('__fakecode') || 'codetest')) { const e = new Error('bad'); e.code = 'auth/invalid-credential'; throw e; } localStorage.setItem('__fakeauth', email); AL.forEach(c => c(cur())); },
+    async signOut() { localStorage.removeItem('__fakeauth'); AL.forEach(c => c(null)); } };
+  window.firebase = { initializeApp() {}, auth: () => auth, firestore: Object.assign(() => db, { FieldValue: { delete: () => ({ __del: true }) } }) };
 })();
