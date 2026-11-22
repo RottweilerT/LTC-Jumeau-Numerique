@@ -18,7 +18,7 @@ const { chromium } = require('playwright'); const fs = require('fs');
   await p.locator('.vente-carte').first().click(); await p.waitForTimeout(300);
   const vis_ = async () => (await p.locator('.vitem:visible b').allTextContents()).join(' | ');
   console.log('tout :', await vis_());
-  for (const q of ['thi', 'ombeline', 'peyrebrune', '3', 'zzz']) { await p.fill('#vc-q', ''); await p.type('#vc-q', q); await p.waitForTimeout(250); console.log(q, '→', await vis_(), (await p.locator('.hint').allTextContents()).filter(t => t.startsWith('Aucun')).join('')); }
+  for (const q of ['bru', 'ombeline', 'peyrebrune', '3', 'zzz']) { await p.fill('#vc-q', ''); await p.type('#vc-q', q); await p.waitForTimeout(250); console.log(q, '→', await vis_(), (await p.locator('.hint').allTextContents()).filter(t => t.startsWith('Aucun')).join('')); }
   await p.fill('#vc-q', ''); await p.type('#vc-q', 'bit'); await p.waitForTimeout(250); await p.screenshot({ path: '/tmp/recherche.png' });
   console.log('focus gardé :', await p.evaluate(() => document.activeElement.id), errs); await b.close();
 })();
