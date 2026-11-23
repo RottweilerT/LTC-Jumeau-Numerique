@@ -2470,7 +2470,7 @@ function listView() {
         } })),
       el("div", { class: "etat-ligne" }, choixEtat(vt))));
     out.push(el("div", { class: "vhead" }, el("h3", { class: "sect-titre", text: "Visites" }),
-      el("button", { class: "btn primary big", text: "+ Nouvelle visite", onclick: () => { V.form = { nom: "", prenom: "", date: today(), heure: nowHM(), collab: (window.__profil?.().nom || ""), com: "", vente: vt.id, type: "collection", prefixe: "40", lots: { text: "" } }; render(); setTimeout(() => $("#vf-nom")?.focus(), 0); } })));
+      el("button", { class: "btn primary big", text: "+ Nouvelle visite", onclick: () => { V.form = { nom: "", prenom: "", date: today(), heure: nowHM(), collab: (window.__profil?.().nom || ""), com: "", vente: vt.id, type: typeVisite(vt), prefixe: "40", lots: { text: "" } }; render(); setTimeout(() => $("#vf-nom")?.focus(), 0); } })));
     if (V.form) out.push(newForm());
   } else out.push(el("div", { class: "vhead" }, el("h3", { class: "sect-titre", text: "Visites sans vente" })), el("p", { class: "hint", text: "Visites créées avant les ventes ou dont la vente a été supprimée. Utilisez « Ranger… » pour les mettre dans une vente." }));
   const filtre = v => vt ? v.vente === vt.id : (!v.vente || !V.ventes.has(v.vente));
@@ -2525,6 +2525,8 @@ function listView() {
 }
 
 
+// Type de visite proposé selon le type de la vente : vente sur offre → à la pièce ; vente collection → collection
+const typeVisite = vt => vt && vt.type === "offre" ? "piece" : "collection";
 const venteLabel = v => (v.typeVente || "collection") === "collection" ? `Vente collection n° ${v.prefixe || "40"}` : "Vente à la pièce";
 function typeField(F) {
   const opt = (k, lab, hint) => el("label", { class: "vtype" + (F.type === k ? " on" : "") },
@@ -2561,7 +2563,7 @@ function newForm() {
     el("div", { class: "vform" },
       inp("Nom du client *", "nom", "text"), inp("Prénom du client", "prenom", "text"),
       inp("Date de la visite", "date", "date"), inp("Heure de début", "heure", "time"),
-      (() => { const s = el("select", { id: "vf-vente" }, el("option", { value: "", text: "— À ranger plus tard —" }), ventesTriees().map(x => el("option", { value: x.id, text: x.nom }))); s.value = F.vente || ""; s.addEventListener("change", () => { F.vente = s.value; }); return el("label", { class: "full" }, "Vente", s); })(),
+      (() => { const s = el("select", { id: "vf-vente" }, el("option", { value: "", text: "— À ranger plus tard —" }), ventesTriees().map(x => el("option", { value: x.id, text: x.nom }))); s.value = F.vente || ""; s.addEventListener("change", () => { F.vente = s.value; if (V.ventes.has(F.vente)) { F.type = typeVisite(V.ventes.get(F.vente)); render(); } }); return el("label", { class: "full" }, "Vente", s); })(),
       inp("Collaborateur accompagnant (facultatif)", "collab", "text", true),
       inp("Commentaires", "com", "textarea", true)),
     el("div", { class: "eyebrow", text: "Lots que le client souhaite voir *" }),
