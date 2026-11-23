@@ -1,0 +1,79 @@
+name: Diagnostic des impressions
+
+# Lecture seule : pour chaque fiche imprimée, dit ce qui a changé depuis sa dernière impression confirmée
+# (lots vus ou revus, signature, n° échangé, infos modifiées, nouveau modèle de compte rendu…).
+# Le journal n'affiche ni nom ni prénom : seulement le n° du client dans sa vente et des heures.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnostic:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Analyser
+        env:
+          CODE: ${{ secrets.JUMEAU_CODE }}
+        run: |
+          python3 - <<'PY'
+          import json, os, re, urllib.request, urllib.error
+          from datetime import datetime, timezone, timedelta
+          page = open("firebase-config.js", encoding="utf-8").read()
+          KEY = re.search(r'apiKey:\s*"([^"]+)"', page).group(1); PROJ = re.search(r'projectId:\s*"([^"]+)"', page).group(1)
+          HDR = {"Referer": "https://rottweilert.github.io/LTC-Jumeau-Numerique/"}
+          acc = re.search(r'JUMEAU_ACCES\s*=\s*"([^"]+)"', page)
+          if acc and os.environ.get("CODE"):
+              r = urllib.request.Request(f"https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key={KEY}", data=json.dumps({"email": acc.group(1), "password": os.environ["CODE"], "returnSecureToken": True}).encode(), headers={**HDR, "Content-Type": "application/json"})
+              HDR["Authorization"] = "Bearer " + json.load(urllib.request.urlopen(r))["idToken"]
+          base = f"https://firestore.googleapis.com/v1/projects/{PROJ}/databases/(default)/documents"
+          def val(v):
+              if "mapValue" in v: return {k: val(x) for k, x in v["mapValue"].get("fields", {}).items()}
+              if "arrayValue" in v: return [val(x) for x in v["arrayValue"].get("values", [])]
+              for k in ("stringValue", "booleanValue", "timestampValue"):
+                  if k in v: return v[k]
+              if "integerValue" in v: return int(v["integerValue"])
+              if "doubleValue" in v: return v["doubleValue"]
+              return None
+          def lire(col):
+              out, tok = {}, ""
+              while True:
+                  d = json.load(urllib.request.urlopen(urllib.request.Request(f"{base}/{col}?pageSize=300&key={KEY}" + (f"&pageToken={tok}" if tok else ""), headers=HDR)))
+                  for x in d.get("documents", []): out[x["name"].split("/")[-1]] = {k: val(v) for k, v in x.get("fields", {}).items()}
+                  tok = d.get("nextPageToken")
+                  if not tok: return out
+          vis = lire("visites"); cfg = lire("config"); ventes = (cfg.get("ventes") or {}).get("liste") or {}
+          MODELE_2 = "2026-11-23T13:57:00Z"  # mise en ligne du compte rendu avec la date sur chaque lot (modèle 2)
+          paris = lambda iso: (datetime.fromisoformat(iso.replace("Z", "+00:00")).astimezone(timezone(timedelta(hours=1)))).strftime("%d/%m %H:%M")
+          def cle(v):
+              if v.get("ordreCle"): return v["ordreCle"]
+              t = [l.get("vu") for l in v.get("lots") or [] if l.get("vu")]
+              return min(t) if t else None
+          def rang(vid):
+              v = vis[vid]; l = [(cle(x) or "~", x.get("date", ""), x.get("heure", ""), i) for i, x in vis.items() if x.get("vente") == v.get("vente")]
+              l.sort(); return [x[3] for x in l].index(vid) + 1
+          from collections import Counter
+          causes = Counter(); n = 0
+          lignes = []
+          for vid, v in vis.items():
+              imp = v.get("impr") or {}
+              if not imp: continue
+              n += 1
+              der = max(x.get("t", "") for x in imp.values())
+              raisons = []
+              if der < MODELE_2: raisons.append("imprimée avant le nouveau modèle (date sur chaque lot, 23/11 vers 15 h)")
+              h = [x for x in v.get("historique") or [] if (x.get("t") or "") > der]
+              c = Counter(x.get("action") for x in h)
+              lib = {"vu": "lot(s) vu(s)", "revu": "lot(s) revu(s)", "vu_annule": "lot(s) décoché(s)", "revu_annule": "passage(s) annulé(s)", "signature": "signature", "numero": "n° échangé", "infos": "infos modifiées (nom, date…)", "rangee": "changement de vente", "derangee": "retirée de la vente"}
+              for a, k in c.items():
+                  if a in lib: raisons.append(f"{k} {lib[a]} après l'impression")
+              for r_ in raisons: causes[r_.split(" (")[0] if "modèle" in r_ else re.sub(r"^\d+ ", "", r_)] += 1
+              vt = ventes.get(v.get("vente") or "", {}).get("nom", "sans vente")
+              lignes.append(f"| {vt} | n° {rang(vid)} | {paris(der)} | {'; '.join(raisons) or 'aucun changement daté (à jour, ou n° décalé par un autre client)'} |")
+          S = open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8")
+          S.write(f"## Fiches imprimées : {n}\n\n| Vente | Client | Dernière impression confirmée | Ce qui a changé depuis |\n|---|---|---|---|\n" + "\n".join(sorted(lignes)) + "\n")
+          print("\n".join(sorted(lignes)))
+          print("Causes :", dict(causes))
+          PY
