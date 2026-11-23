@@ -2023,7 +2023,33 @@ function menuVente(x) {
 // Numéro du client = ordre dans la vente selon l'heure du premier lot coché de chaque visite
 // (un client dont aucun lot n'est encore coché passe après, dans l'ordre des visites)
 const premierVu = v => (v.lots || []).reduce((m, l) => l.vu && (!m || l.vu < m) ? l.vu : m, null);
-const ordreRang = (a, b) => { const pa = premierVu(a), pb = premierVu(b); if (pa && pb && pa !== pb) return pa < pb ? -1 : 1; if (!!pa !== !!pb) return pa ? -1 : 1; return ordreVisite(a, b); };
+// N° du client = ordre du 1er lot vu ; « ordreCle » (facultatif) remplace cette heure quand deux n° ont été échangés à la main
+const cleRang = v => v.ordreCle || premierVu(v);
+const ordreRang = (a, b) => { const pa = cleRang(a), pb = cleRang(b); if (pa && pb && pa !== pb) return pa < pb ? -1 : 1; if (!!pa !== !!pb) return pa ? -1 : 1; return ordreVisite(a, b); };
+/* Échanger le n° de deux clients d'une même vente (ex. 22 ↔ 23) : chacun prend la place de l'autre dans l'ordre */
+function echangerNumero(v) {
+  const rk = rang(v); if (!rk) return;
+  const autres = [...V.list.values()].filter(x => x.vente === v.vente && x.id !== v.id).sort(ordreRang);
+  modale(`Échanger le n° ${rk} de ${nomClient(v)}`, close => {
+    const confirmer = async x => {
+      const ka = cleRang(v), kb = cleRang(x), ra = rk, rb = rang(x);
+      if (!ka || !kb) { toast("Ces deux clients doivent avoir au moins un lot vu pour avoir un n° fixe.", true); return; }
+      close();
+      try {
+        const b = T.db.batch(), t = new Date().toISOString();
+        b.update(vdoc(v.id), { ordreCle: kb, historique: hist(v, "numero", null, { de: ra, vers: rb }) });
+        b.update(vdoc(x.id), { ordreCle: ka, historique: hist(x, "numero", null, { de: rb, vers: ra }) });
+        await b.commit();
+        V.list.set(v.id, { ...v, ordreCle: kb }); V.list.set(x.id, { ...x, ordreCle: ka }); render();
+        toast(`${nomClient(v)} est maintenant n° ${rb}, ${nomClient(x)} n° ${ra}`);
+      } catch (_) { toast("Échange impossible (connexion ?). Rien n'a été modifié.", true); }
+    };
+    return [el("span", { class: "vmeta", text: "Choisissez le client avec qui échanger le numéro :" }),
+      el("div", { class: "vente-choix", style: "max-height:55vh;overflow:auto;display:flex;flex-direction:column;gap:6px" }, autres.map(x => el("button", { class: "btn big", type: "button", disabled: !cleRang(x), title: cleRang(x) ? "" : "Aucun lot vu : pas encore de n° fixe", onclick: () => confirmer(x) },
+        el("b", { text: `N° ${rang(x)} · ` }), el("span", { text: nomClient(x) }), Math.abs(rang(x) - rk) === 1 ? el("small", { text: " (voisin)" }) : null))),
+      el("div", { class: "vacts" }, el("span", { class: "sp" }), el("button", { class: "btn", type: "button", text: "Annuler", onclick: close }))];
+  });
+}
 function rang(v) {
   if (!v.vente || !V.ventes.has(v.vente)) return null;
   const l = [...V.list.values()].filter(x => x.vente === v.vente).sort(ordreRang);
@@ -2047,7 +2073,7 @@ async function supprimerVente(id) {
 async function ranger(v, venteId) {
   const avant = v.vente || null;
   if (avant === venteId) return;
-  await patch(v.id, { vente: venteId || null, historique: hist(V.list.get(v.id) || v, venteId ? "rangee" : "derangee") });
+  await patch(v.id, { vente: venteId || null, ordreCle: null, historique: hist(V.list.get(v.id) || v, venteId ? "rangee" : "derangee") });
   toast(venteId ? `Visite de ${nomClient(v)} rangée dans « ${V.ventes.get(venteId)?.nom} »` : `Visite de ${nomClient(v)} retirée de la vente`);
 }
 function modale(titre, contenu) {
@@ -2555,7 +2581,8 @@ function detail(v) {
   { const vte = V.ventes.get(v.vente), rk = rang(v);
     out.push(el("div", { class: "vente-ligne" },
       el("span", {}, vte ? el("span", {}, "Vente : ", el("b", { text: vte.nom }), rk ? ` · client n° ${rk}` : "") : el("span", { class: "hint", text: "Pas encore rangée dans une vente (le n° du client et le nom de la vente apparaissent sur le compte rendu une fois rangée)." })),
-      el("button", { class: "btn small", text: vte ? "Changer de vente" : "Ranger dans une vente…", onclick: () => menuRanger(v) }))); }
+      el("div", { class: "vacts" }, rk ? el("button", { class: "btn small", text: "Échanger le n°…", onclick: () => echangerNumero(v) }) : null,
+        el("button", { class: "btn small", text: vte ? "Changer de vente" : "Ranger dans une vente…", onclick: () => menuRanger(v) })))); }
 
   // Progression
   out.push(el("div", { class: "vcard prog" },
@@ -2701,9 +2728,9 @@ function detail(v) {
 
   // Historique
   const h = (v.historique || []).slice().reverse();
-  const lbl = { creation: "Visite créée", ajout: "Lot ajouté", retrait: "Lot retiré", vu: "Lot présenté", vu_annule: "Statut « Vu » annulé", terminee: "Visite terminée", infos: "Informations modifiées", revu: "Lot revu", revu_annule: "Passage annulé", note: "Annotation", note_suppr: "Annotation supprimée", rangee: "Rangée dans une vente", derangee: "Retirée de la vente", reouverture: "Visite rouverte", export: "Compte rendu exporté", signature: "Signature enregistrée" };
+  const lbl = { creation: "Visite créée", ajout: "Lot ajouté", retrait: "Lot retiré", vu: "Lot présenté", vu_annule: "Statut « Vu » annulé", terminee: "Visite terminée", infos: "Informations modifiées", revu: "Lot revu", revu_annule: "Passage annulé", note: "Annotation", note_suppr: "Annotation supprimée", rangee: "Rangée dans une vente", derangee: "Retirée de la vente", reouverture: "Visite rouverte", numero: "N° du client échangé", export: "Compte rendu exporté", signature: "Signature enregistrée" };
   out.push(el("details", { class: "vcard" }, el("summary", { text: `Historique des actions (${h.length})` }),
-    el("div", { class: "hist" }, h.map(x => el("div", { text: `${fDT(x.t)} — ${lbl[x.action] || x.action}${x.lot ? " " + x.lot : ""}${x.ancien ? " (était vu à " + fT(x.ancien) + ")" : ""}${x.jour ? " · journée du " + fDate(x.jour) : ""}${x.champs ? " (" + x.champs + ")" : ""}` })))));
+    el("div", { class: "hist" }, h.map(x => el("div", { text: `${fDT(x.t)} — ${lbl[x.action] || x.action}${x.lot ? " " + x.lot : ""}${x.ancien ? " (était vu à " + fT(x.ancien) + ")" : ""}${x.action === "numero" ? ` (n° ${x.de} → n° ${x.vers})` : ""}${x.jour ? " · journée du " + fDate(x.jour) : ""}${x.champs ? " (" + x.champs + ")" : ""}` })))));
   return out;
 }
 

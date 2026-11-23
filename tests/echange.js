@@ -1,0 +1,31 @@
+const { chromium } = require('playwright'); const fs = require('fs');
+(async () => {
+  const b = await chromium.launch(); const errs = [];
+  const iso = m => { const d = new Date(); d.setDate(d.getDate() + m); return d.toLocaleDateString('sv-SE'); };
+  const vis = (prenom, nom, t) => ({ prenom, nom, date: iso(0), heure: '09:00', statut: 'en_cours', vente: 'vdec', signatures: {}, historique: [], lots: [{ lot: '40068', vu: t }] });
+  const data = { personnes: { p_a: { nom: 'Ernestine Valmorel' } }, config: { profils: { remise: 1, ajout: 1 }, batiment: { nom: 'Bâtiment', largeur: 9, profondeur: 14, zones: [], murs: [] }, ventes: { liste: { vdec: { nom: 'Vente Décembre', date: iso(20) } } } },
+    racks: {}, items: {}, visites: { a: vis('Zéphirin', 'Bouldoire', '2026-11-10T09:00:00Z'), b: vis('Anselme', 'Tricotel', '2026-11-10T10:00:00Z'), c: vis('Barnabé', 'Pommelec', '2026-11-10T11:00:00Z'), d: vis('Ludovin', 'Varenque', null) } };
+  const ctx = await b.newContext({ viewport: { width: 390, height: 844 } });
+  await ctx.route('**/*', r => { const u = r.request().url();
+    if (u.includes('firebase-app-compat')) return r.fulfill({ contentType: 'text/javascript', body: fs.readFileSync('tests/fake-firebase.js', 'utf8') });
+    if (u.includes('compat')) return r.fulfill({ contentType: 'text/javascript', body: '' });
+    if (u.endsWith('firebase-config.js')) return r.fulfill({ contentType: 'text/javascript', body: 'const FIREBASE_CONFIG = { apiKey: "x", projectId: "test" };' });
+    if (u.startsWith('http://localhost')) return r.continue(); return r.abort(); });
+  const p = await ctx.newPage(); p.on('pageerror', e => errs.push(e.message));
+  await p.goto('http://localhost:8765/importer.html');
+  await p.evaluate(d => { localStorage.clear(); localStorage.setItem('__fakefs', JSON.stringify(d)); localStorage.setItem('jumeau-profil', 'p_a'); localStorage.setItem('jumeau-profil-nom', 'Ernestine Valmorel'); }, data);
+  await p.goto('http://localhost:8765/'); await p.waitForTimeout(900); await p.click('#tabVis'); await p.waitForTimeout(300);
+  await p.locator('.vente-carte').first().click(); await p.waitForTimeout(300);
+  const liste = async () => (await p.locator('.vitem:not(.vente-carte) b').allTextContents()).join(' | ');
+  console.log('avant :', await liste());
+  await p.click('.vitem:has-text("Pommelec")'); await p.waitForTimeout(400);
+  await p.click('button:has-text("Échanger le n°")'); await p.waitForTimeout(300);
+  console.log('choix :', (await p.locator('.modal .vente-choix button').allInnerTexts()).map(t => t.replace(/\n/g, '')).join(' / '), '| désactivés :', await p.locator('.modal .vente-choix button[disabled]').count());
+  await p.screenshot({ path: '/tmp/echange.png' });
+  await p.click('.modal .vente-choix button:has-text("Tricotel")'); await p.waitForTimeout(500);
+  console.log('fiche :', (await p.locator('.vente-ligne').nth(1).innerText()).split('\n')[0]);
+  await p.click('details.vcard summary:has-text("Historique des actions")'); console.log('historique :', (await p.locator('.hist div').first().textContent()));
+  await p.click('.vtab-go, button:has-text("Liste des visites")'); await p.waitForTimeout(300);
+  console.log('après :', await liste());
+  await p.reload(); await p.waitForTimeout(900); console.log('après rechargement :', await liste(), errs); await b.close();
+})();
