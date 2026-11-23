@@ -76,4 +76,7 @@ jobs:
           S.write(f"## Fiches imprimées : {n}\n\n| Vente | Client | Dernière impression confirmée | Ce qui a changé depuis |\n|---|---|---|---|\n" + "\n".join(sorted(lignes)) + "\n")
           print("\n".join(sorted(lignes)))
           print("Causes :", dict(causes))
+          for i, x in ventes.items():
+              c = x.get("catalogue")
+              print("Vente", x.get("nom"), "· fichier des lots :", f"oui ({c.get('n')} lots, importé le {paris(c.get('t'))})" if c else "non")
           PY
