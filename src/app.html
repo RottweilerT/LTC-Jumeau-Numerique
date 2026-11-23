@@ -325,6 +325,7 @@ h3{margin:0 0 8px;font-family:var(--f-display);font-size:17px;font-weight:600;le
 .vchip.add{border-style:dashed;color:var(--muted);font-weight:500}
 .vente-tete{flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:space-between}
 .impr-p{display:inline-block;margin-left:6px;font-size:12px;font-weight:600;padding:2px 8px;border-radius:999px;border:1px solid}
+.impr-charge{color:var(--muted);border-color:var(--line);background:transparent}
 .impr-jamais{color:#5B646E;border-color:#B9C0C8;background:#EEF0F3}
 .impr-ajour{color:#1E6B3F;border-color:#7FC19A;background:#E3F3E9}
 .impr-reimp{color:#9A4B07;border-color:#F0A35E;background:#FDEBD8}
@@ -1819,6 +1820,15 @@ function catVente(id) {
   return null;
 }
 const catForMemo = new Map();
+/* Attend que les fichiers des lots des ventes concernées soient chargés (au plus 15 s) : sans eux, le compte rendu
+   prendrait les réf. et formats du plan au lieu de ceux du fichier, et l'empreinte de la fiche serait fausse */
+async function attendreCats(venteIds) {
+  for (const id of new Set(venteIds.filter(Boolean))) {
+    if (!V.ventes.get(id)?.catalogue) continue;
+    for (let i = 0; i < 75 && !catVente(id); i++) await new Promise(ok => setTimeout(ok, 200));
+    if (!catVente(id)) throw new Error("fichier des lots non chargé");
+  }
+}
 function catalogFor(v) {
   const base = catalog(), sm = v && v.vente ? catVente(v.vente) : null;
   if (!sm) return base;
@@ -2997,6 +3007,7 @@ function dessinerFiche(doc, v, jour, numJour, nbJours, ent, pied) {
 }
 async function exportPdf(v, jour, numJour, nbJours) {
   if (!window.jspdf || !window.jspdf.jsPDF) { toast("Le module PDF n'a pas pu se charger. Rechargez la page.", true); return; }
+  try { await attendreCats([v.vente]); } catch (_) { toast("Le fichier des lots de la vente n'est pas encore chargé : réessayez dans un instant.", true); return; }
   const [ent, pied] = await fondsFiche();
   const doc = new window.jspdf.jsPDF({ unit: "mm", format: "a4" });
   dessinerFiche(doc, v, jour, numJour, nbJours, ent, pied);
@@ -3029,10 +3040,11 @@ function calcEmpreinte(v) {
 const imprConfirmees = v => Object.entries(v.impr || {}).map(([lot, x]) => ({ lot, ...x })).sort((a, b) => String(a.t).localeCompare(String(b.t)));
 function etatImpr(v) {
   const c = imprConfirmees(v); if (!c.length) return "jamais";
+  if (V.ventes.get(v.vente)?.catalogue && !catVente(v.vente)) return "charge"; // fichier des lots pas encore chargé : on ne conclut pas
   return c.some(x => x.h === empreinteFiche(v)) ? "ajour" : "reimp"; // à jour si la version actuelle a déjà été imprimée
 }
-const LIB_IMPR = { jamais: "Jamais imprimée", ajour: "Imprimée à jour", reimp: "À réimprimer" };
-const pastilleImpr = (v, court) => { const e = etatImpr(v); return el("span", { class: "impr-p impr-" + e, title: LIB_IMPR[e], text: court ? { jamais: "Non imprimée", ajour: "Imprimée", reimp: "À réimprimer" }[e] : LIB_IMPR[e] }); };
+const LIB_IMPR = { jamais: "Jamais imprimée", ajour: "Imprimée à jour", reimp: "À réimprimer", charge: "Vérification…" };
+const pastilleImpr = (v, court) => { const e = etatImpr(v); return el("span", { class: "impr-p impr-" + e, title: LIB_IMPR[e], text: court ? { jamais: "Non imprimée", ajour: "Imprimée", reimp: "À réimprimer", charge: "…" }[e] : LIB_IMPR[e] }); };
 const lotsImpr = () => V.imprLots || {};
 const majLotImpr = (id, data) => T.db.doc("config/impressions").set({ lots: { [id]: data } }, { merge: true }).catch(() => {});
 const nouveauLotImpr = () => "i" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
@@ -3073,6 +3085,9 @@ async function imprimerFiches(vs, opts = {}) {
   const id = nouveauLotImpr(), t = new Date().toISOString(), par = T.uid || null;
   const fiches = {}, ordre = [];
   let url = null;
+  try { await attendreCats(vs.map(v => v.vente)); }
+  catch (_) { toast("Le fichier des lots de la vente n'est pas encore chargé : réessayez dans un instant (rien n'a été imprimé).", true); return; }
+  vs = vs.map(v => V.list.get(v.id) || v); cacheEmp = new WeakMap();
   try {
     const [ent, pied] = await fondsFiche();
     const doc = new window.jspdf.jsPDF({ unit: "mm", format: "a4" });
