@@ -2886,11 +2886,11 @@ const fondsFiche = async () => { const f = fondsPdf || await Promise.all([imgPdf
 function donneesFiche(v, jour) {
   const cat = catalogFor(v);
   const seen = (jour ? lotsDuJour(v, jour).map(l => ({ ...l, vu: l.tJour })) : (v.lots || []).filter(l => l.vu)).sort(ordreLot);
-  const sameDay = l => new Date(l.vu).toLocaleDateString("sv-SE") === (jour || v.date);
-  const tousJour = seen.every(sameDay);
+  // Chaque lot porte sa date et son heure (jj/mm hh:mm), même ceux du premier jour
+  const tousJour = false;
   const hm = iso => new Date(iso).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
   const jm = iso => new Date(iso).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" });
-  const rows = seen.map(l => { const e = info(cat, l.lot); return [l.lot, e.idlot ? String(e.idlot) : "—", e.qte ? String(e.qte) : "—", e.unite || "—", (sameDay(l) ? hm(l.vu) : jm(l.vu) + " " + hm(l.vu)) + (l.revuDuJour ? " revu" : "")]; });
+  const rows = seen.map(l => { const e = info(cat, l.lot); return [l.lot, e.idlot ? String(e.idlot) : "—", e.qte ? String(e.qte) : "—", e.unite || "—", jm(l.vu) + " " + hm(l.vu) + (l.revuDuJour ? " revu" : "")]; });
   const sg = v.signatures || {}; let sig = null;
   if (jour) sig = sigDuJour(v, jour) || null;
   else { const ks = Object.keys(sg).filter(k => k.startsWith("client")).sort((a, b) => String(sg[b].t).localeCompare(String(sg[a].t))); if (ks.length) sig = sg[ks[0]]; }
@@ -3013,7 +3013,7 @@ async function exportPdf(v, jour, numJour, nbJours) {
    - Lot d'impression : identifiant unique, journal dans config/impressions (généré, demandé, annulé, échec, confirmé).
    - Confirmation : écrite dans la visite sous impr.<lot> avec l'empreinte figée au moment de la génération
      (clé = lot : rejouer une confirmation ne crée pas de doublon ; plusieurs postes n'écrivent jamais la même clé). */
-const MODELE_FICHE = "1"; // à augmenter si la mise en page du compte rendu change : les fiches passeront « à réimprimer »
+const MODELE_FICHE = "2"; // 2 : date ajoutée pour tous les lots (23/11/2026) // à augmenter si la mise en page du compte rendu change : les fiches passeront « à réimprimer »
 const hash53 = str => { let h1 = 0xdeadbeef, h2 = 0x41c6ce57; for (let i = 0, ch; i < str.length; i++) { ch = str.charCodeAt(i); h1 = Math.imul(h1 ^ ch, 2654435761); h2 = Math.imul(h2 ^ ch, 1597334677); } h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909); h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909); return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36); };
 let cacheEmp = new WeakMap();
 function empreinteFiche(v) {
