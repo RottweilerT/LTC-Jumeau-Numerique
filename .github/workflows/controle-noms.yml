@@ -1,0 +1,66 @@
+name: Contrôle des noms réels dans le dépôt
+
+# Lecture seule : compare les noms et prénoms des clients de la base (et des profils) avec TOUT le dépôt,
+# historique compris. Le journal n'affiche aucun nom : seulement des nombres et des chemins de fichiers.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  controle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Comparer
+        env:
+          CODE: ${{ secrets.JUMEAU_CODE }}
+        run: |
+          python3 - <<'PY'
+          import json, os, re, subprocess, urllib.request, unicodedata
+          page = open("firebase-config.js", encoding="utf-8").read()
+          KEY = re.search(r'apiKey:\s*"([^"]+)"', page).group(1); PROJ = re.search(r'projectId:\s*"([^"]+)"', page).group(1)
+          HDR = {"Referer": "https://rottweilert.github.io/LTC-Jumeau-Numerique/"}
+          acc = re.search(r'JUMEAU_ACCES\s*=\s*"([^"]+)"', page)
+          r = urllib.request.Request(f"https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key={KEY}", data=json.dumps({"email": acc.group(1), "password": os.environ["CODE"], "returnSecureToken": True}).encode(), headers={**HDR, "Content-Type": "application/json"})
+          HDR["Authorization"] = "Bearer " + json.load(urllib.request.urlopen(r))["idToken"]
+          base = f"https://firestore.googleapis.com/v1/projects/{PROJ}/databases/(default)/documents"
+          def lire(col):
+              out, tok = [], ""
+              while True:
+                  d = json.load(urllib.request.urlopen(urllib.request.Request(f"{base}/{col}?pageSize=300&key={KEY}" + (f"&pageToken={tok}" if tok else ""), headers=HDR)))
+                  out += [x.get("fields", {}) for x in d.get("documents", [])]
+                  tok = d.get("nextPageToken")
+                  if not tok: return out
+          sv = lambda f, k: (f.get(k) or {}).get("stringValue", "")
+          mots = set()
+          for f in lire("visites"):
+              for k in ("nom", "prenom"):
+                  for m in re.split(r"[\s\-']+", sv(f, k)): mots.add(m)
+          nb_clients = len(mots)
+          for f in lire("personnes"):
+              for m in re.split(r"[\s\-']+", sv(f, "nom")): mots.add(m)
+          mots = {m for m in mots if len(m) >= 3}
+          nrm = lambda s: unicodedata.normalize("NFD", s).encode("ascii", "ignore").decode().lower()
+          # Tout le contenu texte du dépôt, toutes versions
+          revs = subprocess.run(["git", "rev-list", "--all"], capture_output=True, text=True).stdout.split()
+          trouves = {}
+          for m in mots:
+              pat = r"\b" + re.escape(nrm(m)) + r"\b"
+              for c in revs:
+                  res = subprocess.run(["git", "grep", "-I", "-i", "-l", "-P", pat, c], capture_output=True, text=True).stdout.split()
+                  for x in res: trouves.setdefault(m, set()).add(x.split(":", 1)[1])
+              msgs = subprocess.run(["git", "log", "--all", "--format=%B"], capture_output=True, text=True).stdout
+              if re.search(pat, nrm(msgs)): trouves.setdefault(m, set()).add("(messages des versions)")
+          S = open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8")
+          S.write(f"## Contrôle des noms réels\n\n- Mots de noms et prénoms comparés (clients et profils) : **{len(mots)}**\n- Versions du dépôt examinées : **{len(revs)}**\n")
+          if not trouves:
+              S.write("- **Aucun nom réel trouvé dans le dépôt (fichiers et historique).**\n"); print(f"::notice::Aucun nom réel trouvé : {len(mots)} mots comparés sur {len(revs)} versions")
+          else:
+              for i, (m, fs) in enumerate(sorted(trouves.items()), 1):
+                  S.write(f"- Nom n° {i} ({len(m)} lettres) trouvé dans : {', '.join(sorted(fs))}\n")
+                  print(f"::warning::Nom n° {i} ({len(m)} lettres) trouvé dans : {', '.join(sorted(fs))}")
+          PY
