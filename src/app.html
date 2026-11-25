@@ -325,6 +325,13 @@ h3{margin:0 0 8px;font-family:var(--f-display);font-size:17px;font-weight:600;le
 .vchip.add{border-style:dashed;color:var(--muted);font-weight:500}
 .vente-tete{flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:space-between}
 .impr-p{display:inline-block;margin-left:6px;font-size:12px;font-weight:600;padding:2px 8px;border-radius:999px;border:1px solid}
+.boites-l{display:flex;flex-direction:column}
+.boite{display:grid;grid-template-columns:auto 1fr auto auto;gap:6px 10px;align-items:center;padding:8px 4px;border-bottom:1px solid var(--line)}
+.boite:last-child{border-bottom:0}
+.boite.vue{background:color-mix(in srgb,var(--ok) 10%,transparent)}
+.boite-nom b{font-family:var(--f-display);font-size:17px}
+.boite .time{font-family:var(--f-mono);font-size:13px;white-space:nowrap}
+.boite-conf{grid-column:1/-1}
 .impr-charge{color:var(--muted);border-color:var(--line);background:transparent}
 .impr-jamais{color:#5B646E;border-color:#B9C0C8;background:#EEF0F3}
 .impr-ajour{color:#1E6B3F;border-color:#7FC19A;background:#E3F3E9}
@@ -2251,9 +2258,77 @@ const ordreLot = (a, b) => String(a.lot ?? a).localeCompare(String(b.lot ?? b), 
 /* ---- Journées de visite : chaque jour où des lots ont été présentés ---- */
 const jourDe = iso => new Date(iso).toLocaleDateString("sv-SE");
 const jourLong = j => { const s = new Date(j + "T12:00:00").toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" }); return s[0].toUpperCase() + s.slice(1); };
+/* ---- Boîtes vues : le client regarde une caisse ou une boîte entière (lots rangés par boîte dans le plan) ----
+   La visite garde boites: [{ b (fiche de la boîte), nom, lotDe, lotA, n, place, ajoute, vu }] ; une boîte vue = tous ses lots vus. */
+const caissesDuPlan = () => [...T.S.items.values()].filter(it => it.lotDe != null && it.lotA != null).map(it => {
+  const r = T.S.racks.get(it.rackId);
+  return { b: it.id, nom: it.nom || "Boîte", lotDe: +it.lotDe, lotA: +it.lotA, n: Array.isArray(it.lots) ? it.lots.length : +it.lotA - +it.lotDe + 1, place: r ? T.rackName(r) + ((r.niveaux | 0) > 1 ? ` · étage ${it.niveau}` : "") : "" };
+}).sort((a, b) => a.place.localeCompare(b.place, "fr", { numeric: true }) || a.lotDe - b.lotDe);
+const nomCourt = x => String(x.nom || "Boîte").split(" · ")[0];
+function blocBoites(v) {
+  const bx = (v.boites || []).slice().sort((a, b) => a.lotDe - b.lotDe);
+  const maj = f => patch(v.id, f);
+  const lignes = bx.map(x => {
+    const ck = el("input", { type: "checkbox", class: "ck", "aria-label": nomCourt(x) + " vue", checked: !!x.vu });
+    const arme = V.armeB && V.armeB.b === x.b && V.armeB.v === v.id && Date.now() - V.armeB.t < 3000;
+    if (arme) ck.classList.add("arme");
+    ck.addEventListener("change", () => {
+      if (ck.checked) {
+        if (!(V.armeB && V.armeB.b === x.b && V.armeB.v === v.id && Date.now() - V.armeB.t < 3000)) { // double touche, comme pour les lots
+          ck.checked = false; ck.classList.add("arme"); V.armeB = { b: x.b, v: v.id, t: Date.now() };
+          toast(`Touchez encore la case pour valider « ${nomCourt(x)} » vue`);
+          clearTimeout(V.armeBT); V.armeBT = setTimeout(() => { V.armeB = null; document.querySelectorAll(".boites .ck.arme").forEach(c => c.classList.remove("arme")); }, 3000);
+          return;
+        }
+        V.armeB = null; const t = new Date().toISOString();
+        maj({ boites: (v.boites || []).map(y => y.b === x.b ? { ...y, vu: t } : y), historique: hist(v, "boite_vue", null, { boite: nomCourt(x), heure: t }) });
+        toast(`${nomCourt(x)} vue à ${fT(t)} (${x.n} lots)`);
+      } else { ck.checked = true; V.confirmB = { v: v.id, b: x.b, kind: "uncheck" }; render(); }
+    });
+    const conf = V.confirmB && V.confirmB.v === v.id && V.confirmB.b === x.b;
+    return el("div", { class: "boite" + (x.vu ? " vue" : "") }, ck,
+      el("div", { class: "boite-nom" }, el("b", { text: nomCourt(x) }), el("span", { class: "vmeta", text: ` ${x.lotDe} → ${x.lotA} · ${x.n} lots${x.place ? " · " + x.place : ""}` })),
+      el("span", { class: "time", text: x.vu ? "vue à " + fT(x.vu) : "" }),
+      el("button", { class: "xbtn", title: "Retirer cette boîte de la visite", "aria-label": "Retirer " + nomCourt(x), text: "×", onclick: () => { V.confirmB = { v: v.id, b: x.b, kind: "remove" }; render(); } }),
+      conf ? el("div", { class: "boite-conf vacts" }, el("span", { text: V.confirmB.kind === "uncheck" ? `Retirer « vue » pour ${nomCourt(x)} ?` : `Retirer ${nomCourt(x)} de la visite ?` }), el("span", { class: "sp" }),
+        el("button", { class: "btn danger small armed", text: "Oui", onclick: () => { const k = V.confirmB.kind; V.confirmB = null;
+          if (k === "uncheck") maj({ boites: (v.boites || []).map(y => y.b === x.b ? { ...y, vu: null } : y), historique: hist(v, "boite_annulee", null, { boite: nomCourt(x), ancien: x.vu }) });
+          else maj({ boites: (v.boites || []).filter(y => y.b !== x.b), historique: hist(v, "boite_retiree", null, { boite: nomCourt(x) }) }); } }),
+        el("button", { class: "btn small", text: "Annuler", onclick: () => { V.confirmB = null; render(); } })) : null);
+  });
+  const vues = bx.filter(x => x.vu).length;
+  return el("div", { class: "vcard boites" },
+    el("div", { class: "vacts" }, el("div", { class: "eyebrow", text: `Boîtes vues (${vues} sur ${bx.length})` }), el("span", { class: "sp" }),
+      el("button", { class: "btn small", text: "+ Ajouter des boîtes", onclick: () => ajouterBoites(v) })),
+    bx.length ? el("div", { class: "boites-l" }, lignes) : el("p", { class: "hint", text: "Pour les lots rangés par boîte (caisses du coffre, boîtes SF…) : ajoutez les boîtes que le client regarde, puis cochez chaque boîte vue en entier." }));
+}
+function ajouterBoites(v) {
+  const deja = new Set((v.boites || []).map(x => x.b)), toutes = caissesDuPlan(), sel = new Set();
+  modale("Ajouter des boîtes à la visite", close => {
+    const liste = el("div", { class: "addlist" }), q = el("input", { type: "search", placeholder: "Chercher : 3, caisse 3, C3, SF, 50740…" });
+    const nb = el("button", { class: "btn primary", text: "Ajouter (0)", disabled: true, onclick: () => {
+      const t = new Date().toISOString(), aj = toutes.filter(x => sel.has(x.b)).map(x => ({ ...x, ajoute: t, vu: null }));
+      patch(v.id, { boites: [...(v.boites || []), ...aj], historique: aj.reduce((h, x) => [...h, { t, action: "boite_ajout", lot: null, par: T.uid || null, boite: nomCourt(x) }], v.historique || []) });
+      close(); toast(`${aj.length} boîte${aj.length > 1 ? "s" : ""} ajoutée${aj.length > 1 ? "s" : ""}`);
+    } });
+    const dessiner = () => {
+      const f = norm(q.value.trim()), num = /^\d{4,6}$/.test(f) ? +f : null;
+      const petit = /^\d{1,3}$/.test(f) ? f : null; // « 3 » = boîte n° 3
+      const numBoite = x => (String(nomCourt(x)).match(/(\d+)\s*$/) || [])[1];
+      const vis = toutes.filter(x => !f || (num != null ? num >= x.lotDe && num <= x.lotA : petit != null ? numBoite(x) === String(+petit) : norm(`${x.nom} ${x.place}`).includes(f)));
+      liste.replaceChildren(...(vis.length ? vis.map(x => { const cb = el("input", { type: "checkbox", checked: deja.has(x.b) || sel.has(x.b), disabled: deja.has(x.b) });
+        cb.addEventListener("change", () => { cb.checked ? sel.add(x.b) : sel.delete(x.b); nb.textContent = `Ajouter (${sel.size})`; nb.disabled = !sel.size; });
+        return el("label", {}, cb, el("strong", { text: nomCourt(x) }), el("span", { class: "vmeta", text: `${x.lotDe} → ${x.lotA} · ${x.n} lots · ${x.place}` }), deja.has(x.b) ? el("span", { class: "in", text: "déjà dans la visite" }) : null); })
+        : [el("p", { class: "hint", text: toutes.length ? "Aucune boîte ne correspond." : "Aucune boîte dans le plan : les boîtes sont créées par les fichiers de rangement (caisses avec une plage de lots)." })]));
+    };
+    q.addEventListener("input", dessiner); dessiner(); setTimeout(() => q.focus(), 50);
+    return [q, liste, el("div", { class: "vacts" }, el("span", { class: "sp" }), el("button", { class: "btn", text: "Annuler", onclick: close }), nb)];
+  });
+}
 function joursVisite(v) {
   const s = new Set();
   for (const l of v.lots || []) for (const t of [l.vu, ...(l.revus || [])]) if (t) s.add(jourDe(t));
+  for (const x of v.boites || []) if (x.vu) s.add(jourDe(x.vu));
   return [...s].sort();
 }
 // Lots présentés un jour donné : premier passage ce jour-là ; « revu » si le lot avait déjà été vu un jour précédent
@@ -2338,7 +2413,10 @@ async function histLots(vt, vs) {
   const etat = { q: "", mode: "vus" }; // vus | jamais | tous
   // Lots jamais vus : demandés mais vus par aucun client, et (si la vente a son fichier des lots) ceux que personne n'a demandés
   const nVuDe = k => (par.get(k) || []).filter(x => x.l.vu).length;
-  const jamais = () => [...new Set([...par.keys(), ...(cat.fichier ? [...cat.keys()] : [])])].filter(k => !nVuDe(k)).sort(ordreLot);
+  // Lots couverts par une boîte vue en entier (par n'importe quel client de la vente) : ils comptent comme vus
+  const couverts = new Set();
+  for (const v of vs) for (const x of v.boites || []) if (x.vu) { const it = T.S.items.get(x.b); for (const l of (it && Array.isArray(it.lots) ? it.lots : Array.from({ length: x.lotA - x.lotDe + 1 }, (_, i) => x.lotDe + i))) couverts.add(String(l)); }
+  const jamais = () => [...new Set([...par.keys(), ...(cat.fichier ? [...cat.keys()] : [])])].filter(k => !nVuDe(k) && !couverts.has(String(k))).sort(ordreLot);
   let liste, compte;
   const ligneClient = ({ v, l, qui }) => {
     const rk = rang(v), passages = [l.vu, ...(l.revus || [])].filter(Boolean);
@@ -2698,6 +2776,7 @@ function detail(v) {
   out.push(el("div", { class: "vtable-wrap" }, el("table", { class: "vtable" },
     el("thead", {}, el("tr", {}, ["Statut", "N° de lot", "Format", "Heure(s) de présentation", "", "Annotation", ""].map(h => el("th", { text: h })))), tb)));
 
+  out.push(blocBoites(v));
   // Ajouter des lots aussi en bas de la liste
   out.push(el("div", { class: "vacts" }, el("span", { class: "sp" }),
     el("button", { class: "btn" + (V.adding && V.addBas ? " on" : ""), text: V.adding && V.addBas ? "Fermer l'ajout" : "+ Ajouter des lots", onclick: () => { const o = !(V.adding && V.addBas); V.adding = o; V.addBas = o; V.addSel = new Set(); V.addQ = ""; render(); } })));
@@ -2740,9 +2819,9 @@ function detail(v) {
 
   // Historique
   const h = (v.historique || []).slice().reverse();
-  const lbl = { creation: "Visite créée", ajout: "Lot ajouté", retrait: "Lot retiré", vu: "Lot présenté", vu_annule: "Statut « Vu » annulé", terminee: "Visite terminée", infos: "Informations modifiées", revu: "Lot revu", revu_annule: "Passage annulé", note: "Annotation", note_suppr: "Annotation supprimée", rangee: "Rangée dans une vente", derangee: "Retirée de la vente", reouverture: "Visite rouverte", numero: "N° du client échangé", export: "Compte rendu exporté", signature: "Signature enregistrée" };
+  const lbl = { creation: "Visite créée", ajout: "Lot ajouté", retrait: "Lot retiré", vu: "Lot présenté", vu_annule: "Statut « Vu » annulé", terminee: "Visite terminée", infos: "Informations modifiées", revu: "Lot revu", revu_annule: "Passage annulé", note: "Annotation", note_suppr: "Annotation supprimée", rangee: "Rangée dans une vente", derangee: "Retirée de la vente", reouverture: "Visite rouverte", boite_ajout: "Boîte ajoutée", boite_vue: "Boîte vue", boite_annulee: "Boîte : « vue » retiré", boite_retiree: "Boîte retirée", numero: "N° du client échangé", export: "Compte rendu exporté", signature: "Signature enregistrée" };
   out.push(el("details", { class: "vcard" }, el("summary", { text: `Historique des actions (${h.length})` }),
-    el("div", { class: "hist" }, h.map(x => el("div", { text: `${fDT(x.t)} — ${lbl[x.action] || x.action}${x.lot ? " " + x.lot : ""}${x.ancien ? " (était vu à " + fT(x.ancien) + ")" : ""}${x.action === "numero" ? ` (n° ${x.de} → n° ${x.vers})` : ""}${x.jour ? " · journée du " + fDate(x.jour) : ""}${x.champs ? " (" + x.champs + ")" : ""}` })))));
+    el("div", { class: "hist" }, h.map(x => el("div", { text: `${fDT(x.t)} — ${lbl[x.action] || x.action}${x.lot ? " " + x.lot : ""}${x.ancien ? " (était vu à " + fT(x.ancien) + ")" : ""}${x.action === "numero" ? ` (n° ${x.de} → n° ${x.vers})` : ""}${x.boite ? " " + x.boite : ""}${x.jour ? " · journée du " + fDate(x.jour) : ""}${x.champs ? " (" + x.champs + ")" : ""}` })))));
   return out;
 }
 
@@ -2902,15 +2981,17 @@ function donneesFiche(v, jour) {
   const tousJour = false;
   const hm = iso => new Date(iso).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
   const jm = iso => new Date(iso).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" });
-  const rows = seen.map(l => { const e = info(cat, l.lot); return [l.lot, e.idlot ? String(e.idlot) : "—", e.qte ? String(e.qte) : "—", e.unite || "—", jm(l.vu) + " " + hm(l.vu) + (l.revuDuJour ? " revu" : "")]; });
+  const boites = (v.boites || []).filter(x => x.vu && (!jour || jourDe(x.vu) === jour)).sort((a, b) => a.vu.localeCompare(b.vu));
+  const rows = [...boites.map(x => [nomCourt(x), `${x.lotDe}-${x.lotA}`, `${x.n} lots`, "Boîte", jm(x.vu) + " " + hm(x.vu)]),
+    ...seen.map(l => { const e = info(cat, l.lot); return [l.lot, e.idlot ? String(e.idlot) : "—", e.qte ? String(e.qte) : "—", e.unite || "—", jm(l.vu) + " " + hm(l.vu) + (l.revuDuJour ? " revu" : "")]; })];
   const sg = v.signatures || {}; let sig = null;
   if (jour) sig = sigDuJour(v, jour) || null;
   else { const ks = Object.keys(sg).filter(k => k.startsWith("client")).sort((a, b) => String(sg[b].t).localeCompare(String(sg[a].t))); if (ks.length) sig = sg[ks[0]]; }
-  return { seen, rows, tousJour, sig };
+  return { seen, rows, tousJour, sig, nbBoites: boites.length };
 }
 /* Dessine une fiche à la suite du document (sur la page courante, déjà vide) ; ses pages sont numérotées à part */
 function dessinerFiche(doc, v, jour, numJour, nbJours, ent, pied) {
-  const { seen, rows, tousJour, sig } = donneesFiche(v, jour);
+  const { seen, rows, tousJour, sig, nbBoites } = donneesFiche(v, jour);
   const p0 = doc.getNumberOfPages();
   const W = 210, M = 12;
   const MOIS = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"];
@@ -2956,7 +3037,8 @@ function dessinerFiche(doc, v, jour, numJour, nbJours, ent, pied) {
   // ---- Liste des lots présentés : sous le formulaire, puis au verso ----
   const OBS = v.observations ? 30 : 0;
   doc.setFont("helvetica", "bold"); doc.setFontSize(10.5);
-  doc.text(jour ? `Lots présentés le ${fDate(jour)} : ${seen.length}${nbJours > 1 ? `   (jour ${numJour} sur ${nbJours})` : ""}` : `Lots présentés : ${seen.length}`, M + 3, 104);
+  const bxT = nbBoites ? ` + ${nbBoites} boîte${nbBoites > 1 ? "s" : ""} entière${nbBoites > 1 ? "s" : ""}` : "";
+  doc.text(jour ? `Lots présentés le ${fDate(jour)} : ${seen.length}${bxT}${nbJours > 1 ? `   (jour ${numJour} sur ${nbJours})` : ""}` : `Lots présentés : ${seen.length}${bxT}`, M + 3, 104);
   const TOP1 = 107, BOT1 = 270, TOP = 14, BOT = 286;
   const configs = [];
   for (const [fs, rh] of [[9, 5], [8, 4.4], [7, 3.8], [6.2, 3.3], [5.5, 2.9], [5, 2.6]]) for (const g of [1, 2, 3]) if (!(g === 3 && fs > 8) && !(g === 2 && fs > 9)) configs.push({ fs, rh, g });
