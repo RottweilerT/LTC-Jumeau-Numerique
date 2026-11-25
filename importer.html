@@ -59,7 +59,17 @@ async function preparerRangement(j) {
   const tous = s.docs.map(d => ({ id: d.id, ...d.data() })).filter(r => String(r.code || "").toUpperCase() === String(j.code).toUpperCase());
   const TYPE = j.type || "coffre", NOMT = { coffre: "coffre", etagere: "armoire", table: "table", bureau: "bureau", roulette: "roulette", sol: "emplacement au sol" }[TYPE] || TYPE;
   const LE = { coffre: "le coffre", etagere: "l'armoire", table: "la table", bureau: "le bureau", roulette: "la roulette", sol: "l'emplacement au sol" }[TYPE] || "l'emplacement";
-  const r = tous.find(x => (x.type || "etagere") === TYPE) || null; // les armoires n'ont pas toujours de type enregistré
+  let r = tous.find(x => (x.type || "etagere") === TYPE) || null; // les armoires n'ont pas toujours de type enregistré
+  // creer.entre : crée l'emplacement s'il n'existe pas, posé au milieu de deux emplacements du plan (ex. au sol entre l'A24 et l'A25)
+  let nouveau = null;
+  if (!r && j.creer && Array.isArray(j.creer.entre)) {
+    const all = s.docs.map(d => ({ id: d.id, ...d.data() })), ref = j.creer.entre.map(c => all.find(x => String(x.code || "").toUpperCase() === String(c).toUpperCase() && (x.type || "etagere") !== "sol"));
+    if (ref.some(x => !x)) throw new Error(`Emplacements de repère introuvables dans le plan : ${j.creer.entre.join(" et ")}.`);
+    const cx = ref.reduce((a, x) => a + (+x.x || 0) + (+x.w || 1) / 2, 0) / ref.length, cy = ref.reduce((a, x) => a + (+x.y || 0) + (+x.d || .5) / 2, 0) / ref.length;
+    const w = j.creer.w || .5, dd = j.creer.d || .5, r1 = v => Math.round(v * 10) / 10;
+    nouveau = { code: j.code, type: TYPE, zone: ref[0].zone || "", w, d: dd, h: .3, niveaux: j.creer.niveaux || 1, x: r1(cx - w / 2), y: r1(cy - dd / 2) };
+    r = { id: "rg-" + String(j.code).toLowerCase().replace(/[^a-z0-9]+/g, "-"), ...nouveau };
+  }
   if (!r) throw new Error(`Pas de ${NOMT} « ${j.code} » dans le plan. Ajoutez-le d'abord dans le jumeau, puis recommencez.`);
   // niveauxMin : ajoute des étages à l'emplacement s'il en a moins (ex. créer un 5e étage dans une armoire de 4)
   const n0 = Math.max(1, r.niveaux | 0), n = Math.max(n0, j.niveauxMin | 0), haut = Math.max(...j.items.map(x => x.niveau != null ? x.niveau - 1 : (x.etageDepuisLeHaut || 0))); // niveau : 1 = en bas ; sinon étage compté depuis le haut
@@ -68,13 +78,14 @@ async function preparerRangement(j) {
   j.items.forEach((x, k) => { const { etageDepuisLeHaut, cle, ...d } = x; docs[`rg-${r.id}-${j.cle}-${cle ?? k + 1}`] = { ...d, rackId: r.id, niveau: d.niveau != null ? d.niveau : n - (etageDepuisLeHaut || 0), maj: t, majPar: null }; });
   // Anciennes fiches du même rangement (ex. une 1re version par caisses) : retirées pour éviter les doublons
   const prefixe = `rg-${r.id}-${j.cle}-`, tousItems = (await db.collection("items").get()).docs, anciens = tousItems.map(d => d.id).filter(id => id.startsWith(prefixe) && !docs[id]);
-  data = { collections: { items: docs }, supprimer: anciens.map(id => ["items", id]), maj: n > n0 ? [["racks", r.id, { niveaux: n }]] : [] };
+  data = { collections: { items: docs }, supprimer: anciens.map(id => ["items", id]), maj: n > n0 && !nouveau ? [["racks", r.id, { niveaux: n }]] : [] };
+  if (nouveau) data.collections.racks = { [r.id]: nouveau };
   // Étages visés qui contiennent déjà autre chose (autre rangement ou article saisi à la main)
   const vises = new Set(Object.values(docs).map(d => d.niveau));
   const occupes = tousItems.filter(d => !d.id.startsWith(prefixe) && d.data().rackId === r.id && vises.has(d.data().niveau)).length;
   const resume = j.resume ? j.resume.map(x => ({ ...x, niveau: x.niveau != null ? x.niveau : n - (x.etageDepuisLeHaut || 0) })) : Object.values(docs);
   const lignes = resume.map(d => `<tr><td>${d.nom}</td><td>étage ${d.niveau}</td></tr>`).join("");
-  $("#res").innerHTML = `<b>${j.titre || "Rangement"}</b> : ${j.items.length} fiche${j.items.length > 1 ? "s" : ""} dans ${LE} ${j.code} (${n > n0 ? `<b>passe de ${n0} à ${n} étages</b>` : `${n} étages`}, l'étage ${n} est en haut).<table>${lignes}</table>${anciens.length ? `${anciens.length} ancienne${anciens.length > 1 ? "s" : ""} fiche${anciens.length > 1 ? "s" : ""} de ce rangement ser${anciens.length > 1 ? "ont" : "a"} retirée${anciens.length > 1 ? "s" : ""}. ` : ""}${occupes ? `<br><b>À savoir :</b> ${occupes} autre${occupes > 1 ? "s" : ""} article${occupes > 1 ? "s" : ""} déjà rangé${occupes > 1 ? "s" : ""} à ce${vises.size > 1 ? "s" : "t"} étage${vises.size > 1 ? "s" : ""} (ils restent en place). ` : ""}Si vous importez deux fois ce fichier, les fiches sont remplacées, pas dupliquées.`;
+  $("#res").innerHTML = `<b>${j.titre || "Rangement"}</b> : ${j.items.length} fiche${j.items.length > 1 ? "s" : ""} dans ${LE} ${j.code} ${nouveau ? `(<b>nouvel emplacement créé</b> entre ${j.creer.entre.join(" et ")} ; vous pourrez le déplacer sur le plan)` : `(${n > n0 ? `<b>passe de ${n0} à ${n} étages</b>` : `${n} étage${n > 1 ? "s" : ""}`}, l'étage ${n} est en haut)`}.<table>${lignes}</table>${anciens.length ? `${anciens.length} ancienne${anciens.length > 1 ? "s" : ""} fiche${anciens.length > 1 ? "s" : ""} de ce rangement ser${anciens.length > 1 ? "ont" : "a"} retirée${anciens.length > 1 ? "s" : ""}. ` : ""}${occupes ? `<br><b>À savoir :</b> ${occupes} autre${occupes > 1 ? "s" : ""} article${occupes > 1 ? "s" : ""} déjà rangé${occupes > 1 ? "s" : ""} à ce${vises.size > 1 ? "s" : "t"} étage${vises.size > 1 ? "s" : ""} (ils restent en place). ` : ""}Si vous importez deux fois ce fichier, les fiches sont remplacées, pas dupliquées.`;
   $("#go").disabled = false;
 }
 $("#go").addEventListener("click", async () => {
