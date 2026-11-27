@@ -1,0 +1,39 @@
+{
+  "manifest_version": "0.3",
+  "name": "ltc-jumeau-lecture",
+  "display_name": "LTC Jumeau (lecture seule)",
+  "version": "1.0.0",
+  "description": "Consulter le jumeau numérique de Le Timbre Classique en lecture seule : où est un lot, contenu des emplacements et des caisses, ventes, visites clients (par n°), fiches à réimprimer.",
+  "long_description": "Connecteur local en lecture seule. Il lit la base Firestore du jumeau avec une clé de compte de service qui n'a que le rôle « Cloud Datastore Viewer ». Aucun outil ne peut écrire. Les noms des clients ne sont jamais transmis : seulement leur n° dans la vente.",
+  "author": { "name": "LTC" },
+  "repository": { "type": "git", "url": "https://github.com/RottweilerT/LTC-Jumeau-Numerique" },
+  "server": {
+    "type": "node",
+    "entry_point": "src/serveur.js",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/src/serveur.js"],
+      "env": { "JUMEAU_CLE": "${user_config.fichier_cle}" }
+    }
+  },
+  "tools": [
+    { "name": "trouver_lot", "description": "Où est rangé un lot (emplacement, étage, caisse)" },
+    { "name": "contenu_emplacement", "description": "Contenu d'un emplacement (armoire, coffre…) étage par étage" },
+    { "name": "contenu_caisse", "description": "Lots rangés dans une caisse ou une boîte" },
+    { "name": "ventes", "description": "Ventes en cours, à venir ou passées" },
+    { "name": "clients_vente", "description": "Clients d'une vente, par n°" },
+    { "name": "visite_client", "description": "Lots vus et pas encore vus par un client (par n°)" },
+    { "name": "fiches_a_reimprimer", "description": "Fiches à réimprimer pour une vente" }
+  ],
+  "user_config": {
+    "fichier_cle": {
+      "type": "file",
+      "title": "Fichier de clé (lecture seule)",
+      "description": "Fichier JSON de la clé du compte de service « claude-lecture-jumeau » (rôle Cloud Datastore Viewer), rangé sur votre PC hors du dépôt.",
+      "required": true
+    }
+  },
+  "compatibility": { "platforms": ["win32", "darwin"], "runtimes": { "node": ">=18.0.0" } },
+  "keywords": ["ltc", "jumeau", "firestore", "lecture seule"],
+  "privacy_policies": ["https://policies.google.com/privacy"]
+}

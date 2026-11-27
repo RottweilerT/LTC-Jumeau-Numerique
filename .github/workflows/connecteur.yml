@@ -1,0 +1,30 @@
+name: Connecteur (tests)
+
+# Tests du connecteur Claude en lecture seule, sur une fausse base (noms inventés), et recherche de clés oubliées dans le dépôt.
+on:
+  push:
+    paths: ["connecteur/**", ".github/workflows/connecteur.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Aucune clé dans le dépôt
+        run: |
+          if git grep -nE 'BEGIN (RSA )?PRIVATE KEY|"type":[[:space:]]*"service_account"|"private_key"' -- . ':!connecteur/tests/*' ':!connecteur/src/firestore.js'; then
+            echo "::error::Une clé semble présente dans le dépôt : retirez-la tout de suite et supprimez-la dans Google Cloud."; exit 1; fi
+          echo "Aucune clé trouvée."
+      - name: Tests du connecteur
+        env:
+          TZ: Europe/Paris
+        run: node connecteur/tests/test.js
+      - name: Fabriquer le paquet .mcpb
+        run: python3 connecteur/fabriquer_mcpb.py

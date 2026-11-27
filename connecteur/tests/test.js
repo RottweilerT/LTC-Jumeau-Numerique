@@ -1,0 +1,50 @@
+// Tests du connecteur sur une fausse base : protocole MCP, outils, absence de noms, absence d'écriture.
+const { spawn } = require("child_process"), fs = require("fs"), path = require("path"), os = require("os");
+const base = require("./fausse-base")();
+const fichier = path.join(os.tmpdir(), "jumeau-fausse-base.json"); fs.writeFileSync(fichier, JSON.stringify(base));
+const NOMS = Object.values(base.collections.visites).flatMap(v => [v.prenom, v.nom]);
+let ok = 0, ko = 0; const verifier = (c, m) => { c ? ok++ : ko++; console.log((c ? "OK    " : "ÉCHEC ") + m); };
+(async () => {
+  const p = spawn(process.execPath, [path.join(__dirname, "../src/serveur.js")], { env: { ...process.env, JUMEAU_FAUSSE_BASE: fichier } });
+  let tampon = "", erreurs = ""; const attente = new Map();
+  p.stdout.on("data", b => { tampon += b; let i; while ((i = tampon.indexOf("\n")) >= 0) { const l = tampon.slice(0, i); tampon = tampon.slice(i + 1); const m = JSON.parse(l); attente.get(m.id)?.(m); } });
+  p.stderr.on("data", b => erreurs += b);
+  let n = 0; const appel = (method, params) => new Promise(r => { const id = ++n; attente.set(id, r); p.stdin.write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n"); });
+  const outil = async (name, args) => { const r = await appel("tools/call", { name, arguments: args }); return { texte: r.result.content[0].text, err: r.result.isError }; };
+  const init = await appel("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } });
+  verifier(init.result.serverInfo.name === "ltc-jumeau-lecture" && init.result.capabilities.tools, "initialisation MCP");
+  p.stdin.write(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) + "\n");
+  const liste = (await appel("tools/list", {})).result.tools;
+  verifier(liste.length === 7 && liste.every(t => t.annotations.readOnlyHint === true && t.annotations.destructiveHint === false), "7 outils, tous marqués lecture seule");
+  const textes = [];
+  const t = async (nom, args, test, lib) => { const r = await outil(nom, args); textes.push(r.texte); verifier(!r.err && test(r.texte), lib); if (process.env.VOIR) console.log(r.texte + "\n"); };
+  await t("trouver_lot", { numero: "50740" }, x => x.includes("Coffre C3 · étage 5 · Caisse 3") && x.includes("171753"), "trouver_lot : lot dans une caisse du coffre C3");
+  await t("trouver_lot", { numero: "169610" }, x => x.includes("Lot 53532") && x.includes("Armoire A25 · étage 4"), "trouver_lot : par réf. à 6 chiffres");
+  await t("trouver_lot", { numero: "77777" }, x => x.includes("n'est rangé dans aucun"), "trouver_lot : lot inconnu");
+  await t("contenu_emplacement", { code: "c3" }, x => x.includes("Coffre C3") && x.includes("Étage 5") && x.includes("Caisse 3 · 50637 → 50840 : lots 50637 à 50840, 2 lots"), "contenu_emplacement : coffre C3");
+  await t("contenu_caisse", { caisse: "3", emplacement: "C3" }, x => x.includes("50740 · 171753 · Enveloppe") && x.includes("2 lots"), "contenu_caisse : caisse 3");
+  await t("contenu_caisse", { caisse: "SF 1" }, x => x.includes("50120"), "contenu_caisse : boîte SF 1");
+  await t("ventes", {}, x => x.includes("en cours") && x.includes("à venir") && x.includes("passée") && x.includes("fichier des lots : 4 lots"), "ventes : états en cours / à venir / passée");
+  await t("ventes", { etat: "a_venir" }, x => x.includes("Juin") && !x.includes("999"), "ventes : filtre à venir");
+  await t("clients_vente", { vente: "999" }, x => x.includes("client n° 1") && x.includes("client n° 2") && x.includes("jamais imprimée"), "clients_vente : clients par n°");
+  await t("visite_client", { vente: "offre 999", numero: 2 }, x => x.includes("52665") && x.includes("revu") && x.includes("Caisse 3") && x.includes("coin plié") && x.includes("53532"), "visite_client : vus, revus, boîte, annotation, pas encore vus");
+  await t("fiches_a_reimprimer", { vente: "999" }, x => x.includes("Jamais imprimées (2)"), "fiches_a_reimprimer");
+  const r = await outil("visite_client", { vente: "inexistante", numero: 1 }); verifier(r.err && r.texte.includes("Aucune vente"), "erreur claire si vente inconnue");
+  verifier(!textes.join("\n").match(new RegExp(NOMS.join("|"), "i")), "aucun nom de client dans les réponses");
+  verifier(!erreurs.match(new RegExp(NOMS.join("|"), "i")) && !erreurs.match(/5\d{4}/), "journal sans nom ni n° de lot");
+  p.kill();
+  // Lecture seule : le code ne contient aucune requête d'écriture vers la base
+  const src = fs.readFileSync(path.join(__dirname, "../src/firestore.js"), "utf8");
+  const methodes = [...src.matchAll(/method:\s*"(\w+)"/g)].map(m => m[1]);
+  verifier(methodes.filter(m => m !== "GET").length === 1 && /fetch\(JETON, \{ method: "POST"/.test(src), "seules requêtes : GET sur Firestore (+ POST pour obtenir le jeton Google)");
+  verifier(!/:commit|:batchWrite|PATCH|DELETE|:runTransaction|:beginTransaction/.test(fs.readFileSync(path.join(__dirname, "../src/firestore.js"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "")), "aucune fonction d'écriture dans firestore.js");
+  // Clé simulée : vérifie le jeton (JWT signé) et que les lectures partent en GET
+  const { generateKeyPairSync } = require("crypto"), { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
+  const cle = path.join(os.tmpdir(), "cle-test.json"); fs.writeFileSync(cle, JSON.stringify({ type: "service_account", project_id: "projet-test", client_email: "test@projet-test.iam.gserviceaccount.com", private_key: privateKey.export({ type: "pkcs8", format: "pem" }) }));
+  const vues = []; global.fetch = async (url, o) => { vues.push(`${o.method} ${String(url).split("?")[0]}`); if (String(url).includes("oauth2")) return { ok: true, json: async () => ({ access_token: "x", expires_in: 3600 }) }; return { ok: true, status: 200, json: async () => ({ documents: [] }) }; };
+  delete process.env.JUMEAU_FAUSSE_BASE; process.env.JUMEAU_CLE = cle;
+  const { ouvrirSource } = require("../src/firestore"); const s = ouvrirSource(); await s.collection("visites"); await s.document("config", "ventes");
+  verifier(vues[0] === "POST https://oauth2.googleapis.com/token" && vues.slice(1).every(x => x.startsWith("GET https://firestore.googleapis.com/v1/projects/projet-test/")), "clé simulée : jeton Google puis lectures GET uniquement");
+  fs.unlinkSync(cle); fs.unlinkSync(fichier);
+  console.log(`\n${ok} réussis, ${ko} échoués`); process.exit(ko ? 1 : 0);
+})();

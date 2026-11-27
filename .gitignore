@@ -1,0 +1,12 @@
+# Clés et secrets : JAMAIS dans le dépôt (il est public)
+*.mcpb
+connecteur/dist/
+*cle*.json
+!connecteur/**/manifest.json
+*service-account*.json
+*serviceaccount*.json
+*-credentials*.json
+*.pem
+*.key
+.env
+.env.*
