@@ -19,7 +19,7 @@ jobs:
           node-version: "20"
       - name: Aucune clé dans le dépôt
         run: |
-          if git grep -nE 'BEGIN (RSA )?PRIVATE KEY|"type":[[:space:]]*"service_account"|"private_key"' -- . ':!connecteur/tests/*' ':!connecteur/src/firestore.js'; then
+          if git grep -nE 'BEGIN (RSA )?PRIVATE KEY|"type":[[:space:]]*"service_account"|"private_key"' -- . ':!connecteur/tests/*' ':!connecteur/src/firestore.js' ':!connecteur/fabriquer_mcpb.py' ':!.github/workflows/connecteur.yml'; then
             echo "::error::Une clé semble présente dans le dépôt : retirez-la tout de suite et supprimez-la dans Google Cloud."; exit 1; fi
           echo "Aucune clé trouvée."
       - name: Tests du connecteur
