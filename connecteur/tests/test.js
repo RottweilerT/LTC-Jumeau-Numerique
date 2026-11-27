@@ -36,14 +36,14 @@ let ok = 0, ko = 0; const verifier = (c, m) => { c ? ok++ : ko++; console.log((c
   // Lecture seule : le code ne contient aucune requête d'écriture vers la base
   const src = fs.readFileSync(path.join(__dirname, "../src/firestore.js"), "utf8");
   const methodes = [...src.matchAll(/method:\s*"(\w+)"/g)].map(m => m[1]);
-  verifier(methodes.filter(m => m !== "GET").length === 1 && /fetch\(JETON, \{ method: "POST"/.test(src), "seules requêtes : GET sur Firestore (+ POST pour obtenir le jeton Google)");
+  verifier(methodes.filter(m => m !== "GET").length === 1 && /transport\(JETON, \{ method: "POST"/.test(src), "seules requêtes : GET sur Firestore (+ POST pour obtenir le jeton Google)");
   verifier(!/:commit|:batchWrite|PATCH|DELETE|:runTransaction|:beginTransaction/.test(fs.readFileSync(path.join(__dirname, "../src/firestore.js"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "")), "aucune fonction d'écriture dans firestore.js");
   // Clé simulée : vérifie le jeton (JWT signé) et que les lectures partent en GET
   const { generateKeyPairSync } = require("crypto"), { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
   const cle = path.join(os.tmpdir(), "cle-test.json"); fs.writeFileSync(cle, JSON.stringify({ type: "service_account", project_id: "projet-test", client_email: "test@projet-test.iam.gserviceaccount.com", private_key: privateKey.export({ type: "pkcs8", format: "pem" }) }));
-  const vues = []; global.fetch = async (url, o) => { vues.push(`${o.method} ${String(url).split("?")[0]}`); if (String(url).includes("oauth2")) return { ok: true, json: async () => ({ access_token: "x", expires_in: 3600 }) }; return { ok: true, status: 200, json: async () => ({ documents: [] }) }; };
+  const vues = []; const fauxTransport = async (url, o) => { vues.push(`${o.method} ${String(url).split("?")[0]}`); if (String(url).includes("oauth2")) return { ok: true, json: async () => ({ access_token: "x", expires_in: 3600 }) }; return { ok: true, status: 200, json: async () => ({ documents: [] }) }; };
   delete process.env.JUMEAU_FAUSSE_BASE; process.env.JUMEAU_CLE = cle;
-  const { ouvrirSource } = require("../src/firestore"); const s = ouvrirSource(); await s.collection("visites"); await s.document("config", "ventes");
+  const fsm = require("../src/firestore"); fsm.transport = fauxTransport; const { ouvrirSource } = fsm; const s = ouvrirSource(); await s.collection("visites"); await s.document("config", "ventes");
   verifier(vues[0] === "POST https://oauth2.googleapis.com/token" && vues.slice(1).every(x => x.startsWith("GET https://firestore.googleapis.com/v1/projects/projet-test/")), "clé simulée : jeton Google puis lectures GET uniquement");
   fs.unlinkSync(cle); fs.unlinkSync(fichier);
   console.log(`\n${ok} réussis, ${ko} échoués`); process.exit(ko ? 1 : 0);

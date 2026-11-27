@@ -8,6 +8,56 @@
    Rien d'autre n'aurait à changer. */
 const fs = require("fs");
 const crypto = require("crypto");
+const https = require("https");
+const tls = require("tls");
+
+/* Certificats : ceux de Node + ceux de Windows (utile si un antivirus ou un pare-feu inspecte les connexions HTTPS).
+   getCACertificates n'existe que sur les Node récents : sinon on garde le comportement par défaut. */
+let CERTIFICATS;
+try {
+  if (typeof tls.getCACertificates === "function") {
+    const s = new Set([...tls.getCACertificates("default"), ...(tls.getCACertificates("system") || [])]);
+    CERTIFICATS = [...s];
+  }
+} catch (_) { CERTIFICATS = undefined; }
+
+const MESSAGES_RESEAU = {
+  ENOTFOUND: "adresse Google introuvable : pas d'internet ou DNS bloqué",
+  EAI_AGAIN: "adresse Google introuvable : pas d'internet ou DNS bloqué",
+  ECONNREFUSED: "connexion refusée (pare-feu ?)",
+  ECONNRESET: "connexion coupée (pare-feu ou antivirus ?)",
+  ETIMEDOUT: "délai dépassé (pare-feu ou proxy ?)",
+  UNABLE_TO_GET_ISSUER_CERT_LOCALLY: "certificat non reconnu (antivirus ou proxy qui inspecte HTTPS)",
+  UNABLE_TO_VERIFY_LEAF_SIGNATURE: "certificat non reconnu (antivirus ou proxy qui inspecte HTTPS)",
+  SELF_SIGNED_CERT_IN_CHAIN: "certificat non reconnu (antivirus ou proxy qui inspecte HTTPS)",
+  DEPTH_ZERO_SELF_SIGNED_CERT: "certificat non reconnu (antivirus ou proxy qui inspecte HTTPS)",
+  CERT_HAS_EXPIRED: "certificat expiré (horloge du PC à l'heure ?)",
+};
+
+/* Requête HTTPS minimale (GET ou POST de formulaire) — renvoie { status, ok, json() } */
+function requete(url, { method = "GET", headers = {}, body } = {}) {
+  return new Promise((resoudre, rejeter) => {
+    const opts = { method, headers: { ...headers }, autoSelectFamily: true, timeout: 20000 };
+    if (CERTIFICATS) opts.ca = CERTIFICATS;
+    if (body != null) opts.headers["Content-Length"] = Buffer.byteLength(body);
+    const req = https.request(url, opts, res => {
+      const morceaux = [];
+      res.on("data", c => morceaux.push(c));
+      res.on("end", () => {
+        const texte = Buffer.concat(morceaux).toString("utf8");
+        resoudre({ status: res.statusCode, ok: res.statusCode >= 200 && res.statusCode < 300, json: async () => JSON.parse(texte) });
+      });
+    });
+    req.on("timeout", () => req.destroy(Object.assign(new Error("timeout"), { code: "ETIMEDOUT" })));
+    req.on("error", e => {
+      const code = e.code || "inconnu";
+      const hote = new URL(url).hostname;
+      rejeter(new Error(`Connexion à ${hote} impossible — ${MESSAGES_RESEAU[code] || "erreur réseau"} [${code}].`));
+    });
+    if (body != null) req.write(body);
+    req.end();
+  });
+}
 
 const LECTURE = "https://firestore.googleapis.com/v1/";
 const JETON = "https://oauth2.googleapis.com/token";
@@ -45,7 +95,7 @@ function sourceFirestore(cheminCle) {
     const t = Math.floor(Date.now() / 1000);
     const corps = b64({ alg: "RS256", typ: "JWT" }) + "." + b64({ iss: cle.client_email, scope: PORTEE, aud: JETON, iat: t, exp: t + 3600 });
     const signature = crypto.sign("RSA-SHA256", Buffer.from(corps), cle.private_key).toString("base64url");
-    const r = await fetch(JETON, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer", assertion: corps + "." + signature }) });
+    const r = await module.exports.transport(JETON, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer", assertion: corps + "." + signature }).toString() });
     if (!r.ok) throw new Error(`Google refuse la clé (${r.status}). Vérifiez qu'elle n'a pas été supprimée.`);
     const d = await r.json(); jeton = d.access_token; expire = Date.now() + (d.expires_in || 3600) * 1000;
     return jeton;
@@ -54,7 +104,7 @@ function sourceFirestore(cheminCle) {
   async function lire(chemin) {
     const url = `${LECTURE}projects/${projet}/databases/(default)/documents/${chemin}`;
     if (!url.startsWith(LECTURE)) throw new Error("Adresse refusée.");
-    const r = await fetch(url, { method: "GET", headers: { Authorization: "Bearer " + await obtenirJeton() } });
+    const r = await module.exports.transport(url, { method: "GET", headers: { Authorization: "Bearer " + await obtenirJeton() } });
     if (r.status === 404) return null;
     if (r.status === 403) throw new Error("Accès refusé par Google : la clé n'a pas le rôle « Cloud Datastore Viewer » sur ce projet.");
     if (!r.ok) throw new Error(`Lecture impossible (${r.status}).`);
@@ -92,4 +142,4 @@ function ouvrirSource() {
   return sourceFirestore(cle);
 }
 
-module.exports = { ouvrirSource, valeur, champs };
+module.exports = { ouvrirSource, valeur, champs, transport: requete };  // transport remplaçable uniquement par les tests

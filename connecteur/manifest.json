@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "ltc-jumeau-lecture",
   "display_name": "LTC Jumeau (lecture seule)",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Consulter le jumeau numérique de Le Timbre Classique en lecture seule : où est un lot, contenu des emplacements et des caisses, ventes, visites clients (par n°), fiches à réimprimer.",
   "long_description": "Connecteur local en lecture seule. Il lit la base Firestore du jumeau avec une clé de compte de service qui n'a que le rôle « Cloud Datastore Viewer ». Aucun outil ne peut écrire. Les noms des clients ne sont jamais transmis : seulement leur n° dans la vente.",
   "author": { "name": "LTC" },
